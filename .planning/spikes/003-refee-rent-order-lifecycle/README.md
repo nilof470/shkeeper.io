@@ -3,7 +3,7 @@ spike: 003
 name: refee-rent-order-lifecycle
 type: standard
 validates: "Given a topped-up re:Fee account, when we POST /api/rent_resource/orders with resource=energy, duration_label=1h, amount=65000 for a real TRX address, then we observe order status transitions, measure delegation latency, and confirm energy arrives on-chain"
-verdict: PENDING
+verdict: VALIDATED
 related: [001, 002]
 tags: [tron, refee, integration]
 ---
@@ -20,11 +20,12 @@ the sidecar broadcasts a TRC-20 transfer.
 
 ## Current Status
 
-**PENDING - live execution blocked by credentials/top-up.**
+**VALIDATED - live `rent_resource` order reached `delegated`.**
 
-This spike has a verified runbook and executable probe, but it has not created a live
-order in this repository session because the API key and topped-up re:Fee balance are
-operator-controlled. The script does not print or store the API key.
+The live run used an operator-provided test API key and a topped-up re:Fee
+balance. The script does not print or store the API key. The JSON report for the
+run was written to `/tmp/refee-rent-lifecycle-live.json` and is intentionally not
+committed because it contains public order metadata.
 
 ## Research
 
@@ -164,8 +165,31 @@ the insufficient-funds path.
 
 ## Results
 
-**Verdict: PENDING.**
+**Verdict: VALIDATED.**
 
-OpenAPI contract is grounded enough for Phase 2 scaffolding, but the live lifecycle is
-not validated yet. Do not tighten `REFEE_RENT_TIMEOUT_SEC` or claim delegated latency
-until this script is run against a topped-up account.
+Live run summary:
+
+- `GET /api/users/me`: HTTP 200.
+- `GET /api/rent_resource/tariffs`: HTTP 200.
+- Visible test balance before order: `30,000,000` sun (30 TRX).
+- Selected `duration_label=1h`, `amount=65000`.
+- Test tariff price: `62.07` sun per energy, estimated cost `4,034,550` sun.
+- `POST /api/rent_resource/orders`: HTTP 202 with initial `status=pending`.
+- Poll sequence: `pending -> delegated`.
+- Delegation latency: `4.933s`.
+- Chain verification: before available energy `0`, after available energy `64999`.
+- Rate-limit headers observed: none.
+
+Operational conclusions:
+
+- The live API uses `id` for order id, `status` for lifecycle state, lowercase
+  statuses, and `txn_hash` for the delegation transaction.
+- `REFEE.poll_interval_sec=2.0` and `REFEE.timeout_sec=60` remain conservative
+  defaults for the sidecar implementation: the observed delegation was under 5s,
+  but production should keep margin for network variance.
+- The stdlib probe needed a browser-like `User-Agent`; otherwise Cloudflare
+  returned `403 Error 1010 browser_signature_banned` for Python urllib. The
+  sidecar's production `requests` client was separately checked against
+  `/api/users/me` and returned HTTP 200 with the same key.
+- Refund behavior on failed/insufficient-funds orders was not tested in this run
+  because the account was funded and the order succeeded.

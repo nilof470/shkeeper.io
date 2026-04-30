@@ -21,6 +21,10 @@ import urllib.request
 
 DEFAULT_REFEE_BASE_URL = "https://api.refee.bot/v2"
 DEFAULT_TRON_FULLNODE_URL = "https://api.trongrid.io"
+DEFAULT_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+)
 SUCCESS_STATUSES = {"delegated", "completed"}
 FAILURE_STATUSES = {"failed", "insufficient_funds", "canceled"}
 RATE_LIMIT_HEADERS = {
@@ -96,7 +100,7 @@ def request_json(
     timeout: float = 20.0,
     extra_headers: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
-    headers = {"accept": "application/json"}
+    headers = {"accept": "application/json", "user-agent": DEFAULT_USER_AGENT}
     if api_key:
         headers["x-api-key"] = api_key
     if body is not None:

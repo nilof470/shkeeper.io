@@ -40,7 +40,8 @@ break-even рассчитан. Для типичного merchant-payment про
 Headline numbers:
 - USDT-TRC20 transfer = 65,000 energy = 13.65 TRX burn baseline
 - `rent_resource` 1h = 2.41 TRX/transfer (saving ~83% vs burn)
-- re:Fee balance аккаунта = 0 sun → spike 003+004 заблокированы до пополнения
+- Initial re:Fee balance during spike 001 was 0 sun. The operator later topped
+  up a test balance and spike 003 validated a live rent order.
 
 ## Open architectural questions (resolved by spikes)
 
@@ -58,9 +59,9 @@ Headline numbers:
 - shkeeper.io main repo needs **zero** code changes for re:Fee — purely a sidecar concern.
 - Existing `ENERGY_DELEGATION_MODE_ALLOW_BURN_TRX_ON_PAYOUT` flag can be reused as fallback semantics for both providers.
 
-## Spike 003 — prepared runbook (2026-04-30)
+## Spike 003 — VALIDATED 2026-04-30
 
-The OpenAPI snapshot confirms the schema-level contract for Phase 2:
+The OpenAPI snapshot and live probe confirm the contract for Phase 2:
 
 - create endpoint: `POST /api/rent_resource/orders`, success HTTP `202`;
 - poll endpoint: `GET /api/rent_resource/orders/{order_id}`;
@@ -71,9 +72,18 @@ The OpenAPI snapshot confirms the schema-level contract for Phase 2:
 - error field: `error`;
 - no `external_id` or idempotency field in `RentResourceSchema`.
 
-Live validation is still pending because it requires the operator's API key and a
-topped-up re:Fee balance. The executable probe lives in
-`003-refee-rent-order-lifecycle/refee_rent_lifecycle.py`.
+Live validation result:
+
+- test balance before order: 30 TRX;
+- 65,000 energy, 1h tariff estimated cost: 4.03455 TRX on the test key;
+- observed status sequence: `pending -> delegated`;
+- delegation latency: 4.933s;
+- on-chain energy available changed from `0` to `64999`;
+- rate-limit headers observed: none.
+
+The executable probe lives in
+`003-refee-rent-order-lifecycle/refee_rent_lifecycle.py`. The JSON report was
+written to `/tmp/refee-rent-lifecycle-live.json` and is not committed.
 
 ## Spike 001 — key findings (2026-04-30)
 
@@ -102,5 +112,5 @@ topped-up re:Fee balance. The executable probe lives in
 | 001 | refee-auth-and-economics | standard | Given API key + a TRX address, when we hit `/api/users/me` and `/api/functions/cost/{address}` and `/api/{rent,auto_charging,always_charged}/tariffs`, then we get balance + per-mode prices and can compute break-even vs burn-TRX | ✓ VALIDATED | tron, refee, economics |
 | ~~002~~ | ~~refee-mode-comparison~~ | ~~comparison~~ | Mode decided up-front (`rent_resource` 1h) — comparison spike skipped | DROPPED | — |
 | 002 | tron-shkeeper-sidecar-recon | standard | Given the existing `vsys-host/tron-shkeeper` sidecar implements `ENERGY_DELEGATION_MODE` via freeze v2, when we read its sweep/payout/delegate code paths, then we know exactly where to inject a re:Fee call (which function, which env vars, which return contract) and whether `aml-shkeeper` already shows a reusable re:Fee client pattern | ✓ VALIDATED | tron, sidecar, recon |
-| 003 | refee-rent-order-lifecycle | standard | Given a topped-up re:Fee account, when we POST `/api/rent_resource/orders` with `resource=energy, duration_label=1h, amount=65000` for a real TRX-address, then we observe order status transitions (`pending → delegated → completed`), measure delegation latency (seconds), and confirm energy actually arrives on-chain | PENDING | tron, refee, integration |
+| 003 | refee-rent-order-lifecycle | standard | Given a topped-up re:Fee account, when we POST `/api/rent_resource/orders` with `resource=energy, duration_label=1h, amount=65000` for a real TRX-address, then we observe order status transitions (`pending → delegated`), measure delegation latency (seconds), and confirm energy actually arrives on-chain | ✓ VALIDATED | tron, refee, integration |
 | 004 | refee-sweep-e2e | standard | Given a static-address-mode user-wallet with USDT and 0 TRX, when sidecar (or our prototype) calls re:Fee → waits delegated → triggers USDT-TRC20 transfer to hot wallet, then transfer succeeds with **zero TRX burned** and energy returns to re:Fee after 1h | PENDING | tron, refee, sweep, e2e |
