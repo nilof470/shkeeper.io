@@ -58,6 +58,23 @@ Headline numbers:
 - shkeeper.io main repo needs **zero** code changes for re:Fee — purely a sidecar concern.
 - Existing `ENERGY_DELEGATION_MODE_ALLOW_BURN_TRX_ON_PAYOUT` flag can be reused as fallback semantics for both providers.
 
+## Spike 003 — prepared runbook (2026-04-30)
+
+The OpenAPI snapshot confirms the schema-level contract for Phase 2:
+
+- create endpoint: `POST /api/rent_resource/orders`, success HTTP `202`;
+- poll endpoint: `GET /api/rent_resource/orders/{order_id}`;
+- order id field: `id`;
+- status field: `status`;
+- status enum: `pending`, `delegated`, `completed`, `failed`,
+  `insufficient_funds`, `canceled`;
+- error field: `error`;
+- no `external_id` or idempotency field in `RentResourceSchema`.
+
+Live validation is still pending because it requires the operator's API key and a
+topped-up re:Fee balance. The executable probe lives in
+`003-refee-rent-order-lifecycle/refee_rent_lifecycle.py`.
+
 ## Spike 001 — key findings (2026-04-30)
 
 - API base URL confirmed: `https://api.refee.bot/v2`
