@@ -2,26 +2,49 @@
 
 ## Idea
 
-Интеграция SHKeeper с внешним сервисом аренды энергии re:Fee
-(`https://github.com/.../openapi-refeebot.json`) для делегирования TRON energy
-на user-кошельки перед sweep USDT-TRC20 на hot wallet мерчанта. Цель —
-заменить burn TRX (≈30 TRX за USDT-transfer) на покупку energy у re:Fee,
-снизив операционные расходы на TRC20-sweep.
+Интеграция SHKeeper с внешним сервисом аренды энергии re:Fee для делегирования
+TRON energy на user-кошельки перед sweep USDT-TRC20 на hot wallet мерчанта.
+Use case — режим **Static Address Mode** (`README.md#static-address-mode-advanced`):
+один постоянный TRON-адрес на user через reusable invoice с `external_id=user_id`.
+На него приходит USDT, периодически SHKeeper sweep'ит на hot wallet — и в этот
+момент нужна энергия. Сейчас её даёт нативный freeze v2 (`ENERGY_DELEGATION_MODE`
+в `tron-shkeeper` sidecar), хотим заменить на покупку у re:Fee.
 
-## Requirements
+## Requirements (revised 2026-04-30)
 
-Зафиксировано из пользовательского описания на 2026-04-30. Эти решения
-non-negotiable для real build, спайки не должны им противоречить.
+После уточнения с пользователем:
 
-- **Одна re:Fee-подписка на одного user** (не одна-на-каждый-sweep). User-wallets живут
-  долго, на них могут приходить разные TRC20-транзакции — подписочная модель,
-  а не транзакционная rent.
-- **Разовое создание ордера с большой суммой** — оплата вперёд, не каждый раз перед sweep.
-- **`external_id` в re:Fee = SHKeeper `user_id`** для bidirectional mapping без отдельной таблицы.
-- **Триггер делегирования — sweep**, а не incoming USDT (то есть когда мы готовы делать transfer
-  на hot wallet, не когда пользователь нам платит).
-- **Цель — экономия**, поэтому fallback на burn TRX должен оставаться для случаев, когда re:Fee
-  недоступен / без баланса / ордер истёк.
+- **Режим re:Fee: `rent_resource` 1h на каждый sweep** (locked, option A).
+  Не `always_charged`, не `auto_charging`. Цитата пользователя:
+  «нет, никакого always charged. Нужно по api вызывать эндпоинт в момент
+  автоматического sweep с пользовательского кошелька на наш основной».
+- **Триггер**: момент инициации sweep в sidecar `tron-shkeeper` (когда он готов
+  отправить USDT-TRC20 transfer с user-address на hot wallet).
+- **Fallback на burn TRX** должен сохраниться (mirror existing
+  `ENERGY_DELEGATION_MODE_ALLOW_BURN_TRX_ON_PAYOUT`) — на случай если re:Fee
+  недоступен, нет баланса, или order failed.
+- **Integration target — `vsys-host/tron-shkeeper` sidecar**, НЕ этот репо.
+  Этот репо (`shkeeper.io`) только проксирует HTTP-вызовы к sidecar через
+  `tron_token.py:mkpayout`. Реальная sweep/delegate-логика — в sidecar.
+- **Не путать**: «разовое создание ордера с большой суммой» в моих ранних
+  заметках = SHKeeper Static Address Mode (большой reusable invoice с
+  `external_id=user_id`), НЕ re:Fee subscription. Spike 001 misread исправлен.
+
+## Spike 001 — VALIDATED 2026-04-30
+
+См. `001-refee-auth-and-economics/`. Результат: live тарифы re:Fee получены,
+break-even рассчитан. Для типичного merchant-payment профиля (1-4 USDT/мес/wallet)
+`rent_resource` 1h в ~50× дешевле любой подписочной модели — экономика
+подтверждает выбранный пользователем режим.
+
+Headline numbers:
+- USDT-TRC20 transfer = 65,000 energy = 13.65 TRX burn baseline
+- `rent_resource` 1h = 2.41 TRX/transfer (saving ~83% vs burn)
+- re:Fee balance аккаунта = 0 sun → spike 003+004 заблокированы до пополнения
+
+## Open architectural questions (resolved by spikes)
+
+- ~~Какой re:Fee-режим лучше~~ — RESOLVED: `rent_resource` 1h. Spike 002 переформулирован.
 
 ## Spike 001 — key findings (2026-04-30)
 
@@ -48,6 +71,7 @@ non-negotiable для real build, спайки не должны им проти
 | # | Name | Type | Validates | Verdict | Tags |
 |---|------|------|-----------|---------|------|
 | 001 | refee-auth-and-economics | standard | Given API key + a TRX address, when we hit `/api/users/me` and `/api/functions/cost/{address}` and `/api/{rent,auto_charging,always_charged}/tariffs`, then we get balance + per-mode prices and can compute break-even vs burn-TRX | ✓ VALIDATED | tron, refee, economics |
-| 002 | refee-mode-comparison | comparison | Given the "1 user = 1 wallet, long-lived subscription" pattern, when we model `rent_resource` vs `auto_charging` vs `always_charged` over a realistic 30-day usage profile (N transfers/day), then one mode wins on cost+ops simplicity | PENDING | tron, refee, architecture |
-| 003 | refee-external-id-mapping | standard | Given re:Fee API has no `external_id` field in OpenAPI, when we test `additionalProperties: true` on order endpoints + dashboard search by address, then we know whether to use raw `address`-as-key or store `(user_id, refee_order_id)` mapping in our DB | PENDING | tron, refee, data-model |
-| 004 | refee-sweep-e2e | standard | Given a user-wallet on TRX testnet/mainnet with USDT and zero TRX, when we call re:Fee delegate → wait for `delegated` → trigger TRC20 transfer to hot wallet, then transfer succeeds with **zero TRX burned** and user-wallet stays usable | PENDING | tron, refee, integration, sweep |
+| ~~002~~ | ~~refee-mode-comparison~~ | ~~comparison~~ | Mode decided up-front (`rent_resource` 1h) — comparison spike skipped | DROPPED | — |
+| 002 | tron-shkeeper-sidecar-recon | standard | Given the existing `vsys-host/tron-shkeeper` sidecar implements `ENERGY_DELEGATION_MODE` via freeze v2, when we read its sweep/payout/delegate code paths, then we know exactly where to inject a re:Fee call (which function, which env vars, which return contract) and whether `aml-shkeeper` already shows a reusable re:Fee client pattern | PENDING | tron, sidecar, recon |
+| 003 | refee-rent-order-lifecycle | standard | Given a topped-up re:Fee account, when we POST `/api/rent_resource/orders` with `resource=energy, duration_label=1h, amount=65000` for a real TRX-address, then we observe order status transitions (`pending → delegated → completed`), measure delegation latency (seconds), and confirm energy actually arrives on-chain | PENDING | tron, refee, integration |
+| 004 | refee-sweep-e2e | standard | Given a static-address-mode user-wallet with USDT and 0 TRX, when sidecar (or our prototype) calls re:Fee → waits delegated → triggers USDT-TRC20 transfer to hot wallet, then transfer succeeds with **zero TRX burned** and energy returns to re:Fee after 1h | PENDING | tron, refee, sweep, e2e |
