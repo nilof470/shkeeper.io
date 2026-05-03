@@ -31,6 +31,7 @@
         - [Get crypto balance information](#get-crypto-balance-info)
         - [Get fee deposit address](#get-fee-deposit-address)
   - [Receiving callback](#receiving-callback)
+  - [AMLBot deposit gate](docs/amlbot_deposit_gate.md)
   - [Ready-made modules](#ready-made-modules)
      - [WHMCS](#whmcs)
      - [WooCommerce WordPress](#woocommerce-wordpress)
