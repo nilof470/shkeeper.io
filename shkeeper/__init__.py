@@ -44,6 +44,13 @@ import flask_migrate
 migrate = flask_migrate.Migrate()
 
 
+def _env_bool(name, default=False):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.lower() in ("1", "true", "yes", "on")
+
+
 def internal_server_error(e):
     return render_template("500.j2", theme=request.cookies.get("theme", "light")), 500
 
@@ -86,6 +93,28 @@ def create_app(test_config=None):
             os.environ.get("DISABLE_CRYPTO_WHEN_LAGS", False)
         ),
         EXTRA_CURRENCIES=os.environ.get("EXTRA_CURRENCIES", ""),
+        AML_ENABLED=_env_bool("AML_ENABLED", True),
+        AML_SHKEEPER_HOST=os.environ.get(
+            "AML_SHKEEPER_HOST", "http://aml-shkeeper:6000"
+        ),
+        AML_SHKEEPER_USERNAME=os.environ.get(
+            "AML_SHKEEPER_USERNAME", os.environ.get("AML_USERNAME", "shkeeper")
+        ),
+        AML_SHKEEPER_PASSWORD=os.environ.get(
+            "AML_SHKEEPER_PASSWORD", os.environ.get("AML_PASSWORD", "shkeeper")
+        ),
+        AML_MAX_ACCEPT_SCORE=os.environ.get("AML_MAX_ACCEPT_SCORE", "0.10"),
+        AML_MIN_CHECK_AMOUNT_FIAT=os.environ.get("AML_MIN_CHECK_AMOUNT_FIAT", "100"),
+        AML_SKIP_CUMULATIVE_LIMIT_FIAT=os.environ.get(
+            "AML_SKIP_CUMULATIVE_LIMIT_FIAT", "300"
+        ),
+        AML_SKIP_CUMULATIVE_WINDOW_HOURS=int(
+            os.environ.get("AML_SKIP_CUMULATIVE_WINDOW_HOURS", "24")
+        ),
+        AML_PENDING_TIMEOUT_SECONDS=int(
+            os.environ.get("AML_PENDING_TIMEOUT_SECONDS", "1800")
+        ),
+        AML_RETRY_DELAY_SECONDS=int(os.environ.get("AML_RETRY_DELAY_SECONDS", "120")),
     )
 
     if test_config is None:
@@ -158,6 +187,7 @@ def create_app(test_config=None):
             Invoice,
             ExchangeRate,
             Setting,
+            AmlCheck,
         )
 
         db.create_all()

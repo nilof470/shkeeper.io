@@ -330,6 +330,20 @@ class InvoiceStatus(enum.Enum):
     OUTGOING = enum.auto()
 
 
+class AmlStatus:
+    PENDING = "pending"
+    CHECKING = "checking"
+    APPROVED = "approved"
+    DECLINED = "declined"
+    SKIPPED = "skipped"
+    MANUAL_REVIEW = "manual_review"
+
+
+class DepositDecision:
+    CREDIT = "credit"
+    MANUAL_REVIEW = "manual_review"
+
+
 class Invoice(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     transactions = db.relationship("Transaction", backref="invoice", lazy=True)
@@ -608,6 +622,12 @@ class Transaction(db.Model):
         default=db.func.current_timestamp(),
         onupdate=db.func.current_timestamp(),
     )
+    aml_check = db.relationship(
+        "AmlCheck",
+        back_populates="transaction",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
     __table_args__ = (db.UniqueConstraint("crypto", "txid", "invoice_id"),)
 
     def __repr__(self):
@@ -704,6 +724,48 @@ class Transaction(db.Model):
             self.need_more_confirmations = False
             db.session.commit()
         return self.need_more_confirmations
+
+
+class AmlCheck(db.Model):
+    __tablename__ = "aml_check"
+
+    id = db.Column(db.Integer, primary_key=True)
+    transaction_id = db.Column(
+        db.Integer, db.ForeignKey("transaction.id"), nullable=False, unique=True
+    )
+    deposit_id = db.Column(db.String(120), nullable=False, unique=True, index=True)
+    idempotency_key = db.Column(db.String(255), nullable=False, unique=True, index=True)
+    provider = db.Column(db.String(30), default="amlbot")
+    provider_status = db.Column(db.String(30))
+    status = db.Column(db.String(30), nullable=False, default=AmlStatus.PENDING)
+    deposit_decision = db.Column(db.String(30))
+    decision_reason = db.Column(db.String(80))
+    score = db.Column(db.Numeric(precision=7, scale=5), nullable=True)
+    threshold = db.Column(db.Numeric(precision=7, scale=5), nullable=True)
+    uid = db.Column(db.String(128))
+    asset = db.Column(db.String(30))
+    network = db.Column(db.String(30))
+    signals_json = db.Column(db.Text, default="{}")
+    raw_response_json = db.Column(db.Text)
+    report_url = db.Column(db.String(512))
+    error_code = db.Column(db.String(80))
+    error_message = db.Column(db.Text)
+    skip_reason = db.Column(db.String(80))
+    min_check_amount_fiat = db.Column(db.Numeric)
+    cumulative_window = db.Column(db.String(30))
+    cumulative_amount_fiat = db.Column(db.Numeric)
+    cumulative_limit_fiat = db.Column(db.Numeric)
+    attempts = db.Column(db.Integer, default=0)
+    next_retry_at = db.Column(db.DateTime)
+    timeout_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp(), index=True)
+    updated_at = db.Column(
+        db.DateTime,
+        default=db.func.current_timestamp(),
+        onupdate=db.func.current_timestamp(),
+    )
+
+    transaction = db.relationship("Transaction", back_populates="aml_check")
 
 
 class PayoutStatus(enum.Enum):
