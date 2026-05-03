@@ -6,11 +6,124 @@ from flask import current_app as app
 
 from shkeeper.modules.classes.crypto import Crypto
 from shkeeper.models import *
+from shkeeper.services.aml_processing import (
+    ensure_aml_for_transaction,
+    is_callback_allowed,
+)
 from datetime import datetime, timedelta
 
 bp = Blueprint("callback", __name__)
 
 DEFAULT_CURRENCY = 'USD'
+
+
+def _json_object(value):
+    if not value:
+        return {}
+    try:
+        return json.loads(value)
+    except (TypeError, ValueError):
+        return {}
+
+
+def _decimal_or_none(value):
+    if value is None:
+        return None
+    return remove_exponent(value)
+
+
+def _aml_payload(aml_check):
+    payload = {
+        "provider": aml_check.provider,
+        "provider_status": aml_check.provider_status,
+        "status": aml_check.status,
+        "score": _decimal_or_none(aml_check.score),
+        "threshold": _decimal_or_none(aml_check.threshold),
+        "uid": aml_check.uid,
+        "asset": aml_check.asset,
+        "network": aml_check.network,
+        "signals": _json_object(aml_check.signals_json),
+    }
+    optional_fields = (
+        "report_url",
+        "error_code",
+        "error_message",
+        "skip_reason",
+        "min_check_amount_fiat",
+        "cumulative_window",
+        "cumulative_amount_fiat",
+        "cumulative_limit_fiat",
+    )
+    for field in optional_fields:
+        value = getattr(aml_check, field)
+        if value is None:
+            continue
+        if field.endswith("_fiat") or field in (
+            "min_check_amount_fiat",
+            "cumulative_amount_fiat",
+            "cumulative_limit_fiat",
+        ):
+            value = remove_exponent(value)
+        payload[field] = value
+    return payload
+
+
+def _add_aml_to_trigger_transaction(item, trigger_tx):
+    aml_check = trigger_tx.aml_check
+    if not aml_check:
+        return item
+    item["deposit_id"] = aml_check.deposit_id
+    item["idempotency_key"] = aml_check.idempotency_key
+    item["deposit_decision"] = aml_check.deposit_decision
+    item["decision_reason"] = aml_check.decision_reason
+    item["aml"] = _aml_payload(aml_check)
+    return item
+
+
+def build_payment_notification(tx):
+    transactions = []
+    for t in tx.invoice.transactions:
+        amount_fiat_without_fee = t.rate.get_orig_amount(t.amount_fiat)
+        item = {
+            "txid": t.txid,
+            "date": str(t.created_at),
+            "amount_crypto": remove_exponent(t.amount_crypto),
+            "amount_fiat": remove_exponent(t.amount_fiat),
+            "amount_fiat_without_fee": remove_exponent(amount_fiat_without_fee),
+            "fee_fiat": remove_exponent(t.amount_fiat - amount_fiat_without_fee),
+            "trigger": tx.id == t.id,
+            "crypto": t.crypto,
+        }
+        if tx.id == t.id:
+            _add_aml_to_trigger_transaction(item, t)
+        transactions.append(item)
+
+    notification = {
+        "external_id": tx.invoice.external_id,
+        "crypto": tx.invoice.crypto,
+        "addr": tx.invoice.addr,
+        "fiat": tx.invoice.fiat,
+        "balance_fiat": remove_exponent(tx.invoice.balance_fiat),
+        "balance_crypto": remove_exponent(tx.invoice.balance_crypto),
+        "paid": tx.invoice.status in (InvoiceStatus.PAID, InvoiceStatus.OVERPAID),
+        "status": tx.invoice.status.name,
+        "transactions": transactions,
+        "fee_percent": remove_exponent(tx.invoice.rate.fee),
+        "fee_fixed": remove_exponent(tx.invoice.rate.fixed_fee),
+        "fee_policy": (
+            tx.invoice.rate.fee_policy.name
+            if tx.invoice.rate.fee_policy
+            else FeeCalculationPolicy.PERCENT_FEE.name
+        ),
+    }
+
+    overpaid_fiat = tx.invoice.balance_fiat - (
+        tx.invoice.amount_fiat * (tx.invoice.wallet.ulimit / 100)
+    )
+    notification["overpaid_fiat"] = (
+        str(round(overpaid_fiat.normalize(), 2)) if overpaid_fiat > 0 else "0.00"
+    )
+    return notification
 
 
 def send_unconfirmed_notification(utx: UnconfirmedTransaction):
@@ -68,47 +181,13 @@ def send_unconfirmed_notification(utx: UnconfirmedTransaction):
 def send_notification(tx):
     app.logger.info(f"[{tx.crypto}/{tx.txid}] Notificator started")
 
-    transactions = []
-    for t in tx.invoice.transactions:
-        amount_fiat_without_fee = t.rate.get_orig_amount(t.amount_fiat)
-        transactions.append(
-            {
-                "txid": t.txid,
-                "date": str(t.created_at),
-                "amount_crypto": remove_exponent(t.amount_crypto),
-                "amount_fiat": remove_exponent(t.amount_fiat),
-                "amount_fiat_without_fee": remove_exponent(amount_fiat_without_fee),
-                "fee_fiat": remove_exponent(t.amount_fiat - amount_fiat_without_fee),
-                "trigger": tx.id == t.id,
-                "crypto": t.crypto,
-            }
+    if tx.invoice.status != InvoiceStatus.OUTGOING and not is_callback_allowed(tx):
+        app.logger.info(
+            f"[{tx.crypto}/{tx.txid}] Final notification blocked until AML terminal state"
         )
+        return False
 
-    notification = {
-        "external_id": tx.invoice.external_id,
-        "crypto": tx.invoice.crypto,
-        "addr": tx.invoice.addr,
-        "fiat": tx.invoice.fiat,
-        "balance_fiat": remove_exponent(tx.invoice.balance_fiat),
-        "balance_crypto": remove_exponent(tx.invoice.balance_crypto),
-        "paid": tx.invoice.status in (InvoiceStatus.PAID, InvoiceStatus.OVERPAID),
-        "status": tx.invoice.status.name,
-        "transactions": transactions,
-        "fee_percent": remove_exponent(tx.invoice.rate.fee),
-        "fee_fixed": remove_exponent(tx.invoice.rate.fixed_fee),
-        "fee_policy": (
-            tx.invoice.rate.fee_policy.name
-            if tx.invoice.rate.fee_policy
-            else FeeCalculationPolicy.PERCENT_FEE.name
-        ),
-    }
-
-    overpaid_fiat = tx.invoice.balance_fiat - (
-        tx.invoice.amount_fiat * (tx.invoice.wallet.ulimit / 100)
-    )
-    notification["overpaid_fiat"] = (
-        str(round(overpaid_fiat.normalize(), 2)) if overpaid_fiat > 0 else "0.00"
-    )
+    notification = build_payment_notification(tx)
 
     apikey = Crypto.instances[tx.crypto].wallet.apikey
     app.logger.warning(
@@ -170,6 +249,12 @@ def send_callbacks():
                     tx.callback_confirmed = True
                     db.session.commit()
                 else:
+                    ensure_aml_for_transaction(tx)
+                    if not is_callback_allowed(tx):
+                        app.logger.info(
+                            f"[{tx.crypto}/{tx.txid}] Notification is blocked by AML"
+                        )
+                        continue
                     app.logger.info(f"[{tx.crypto}/{tx.txid}] Notification is pending")
                     send_notification(tx)
             else:

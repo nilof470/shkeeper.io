@@ -29,6 +29,10 @@ from shkeeper.modules.cryptos.monero import Monero
 from shkeeper.modules.rates import RateSource
 from shkeeper.models import *
 from shkeeper.callback import send_notification, send_unconfirmed_notification
+from shkeeper.services.aml_processing import (
+    ensure_aml_for_transaction,
+    is_callback_allowed,
+)
 from shkeeper.utils import format_decimal
 from shkeeper.wallet_encryption import (
     wallet_encryption,
@@ -525,7 +529,11 @@ def walletnotify(crypto_name, txid):
                 UnconfirmedTransaction.delete(crypto_name, txid)
                 app.logger.info(f"[{crypto.crypto}/{txid}] TX has been added to db")
                 if not tx.need_more_confirmations:
-                    send_notification(tx)
+                    ensure_aml_for_transaction(tx)
+                    if is_callback_allowed(tx):
+                        send_notification(tx)
+                    else:
+                        app.logger.info(f"[{crypto.crypto}/{txid}] AML is pending")
             except sqlalchemy.exc.IntegrityError as e:
                 app.logger.warning(f"[{crypto.crypto}/{txid}] TX already exist in db")
                 db.session.rollback()

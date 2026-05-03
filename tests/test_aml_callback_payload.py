@@ -1,0 +1,222 @@
+import unittest
+from decimal import Decimal
+
+from flask import Flask
+
+from shkeeper import db
+from shkeeper.callback import build_payment_notification, send_unconfirmed_notification
+from shkeeper.modules.classes.crypto import Crypto
+from shkeeper.models import (
+    AmlCheck,
+    AmlStatus,
+    DepositDecision,
+    ExchangeRate,
+    FeeCalculationPolicy,
+    Invoice,
+    InvoiceAddress,
+    InvoiceStatus,
+    Transaction,
+    UnconfirmedTransaction,
+    Wallet,
+)
+
+
+class AmlCallbackPayloadTestCase(unittest.TestCase):
+    def setUp(self):
+        self.app = Flask(__name__)
+        self.app.config.update(
+            TESTING=True,
+            SQLALCHEMY_DATABASE_URI="sqlite:///:memory:",
+            SQLALCHEMY_TRACK_MODIFICATIONS=False,
+            REQUESTS_NOTIFICATION_TIMEOUT=1,
+        )
+        db.init_app(self.app)
+        self.ctx = self.app.app_context()
+        self.ctx.push()
+        db.create_all()
+        db.session.add(
+            Wallet(
+                crypto="BTC",
+                apikey="api-key",
+                llimit=Decimal("95"),
+                ulimit=Decimal("105"),
+            )
+        )
+        db.session.add(
+            ExchangeRate(
+                crypto="BTC",
+                fiat="USD",
+                rate=Decimal("1000"),
+                fee=Decimal("0"),
+                fixed_fee=Decimal("0"),
+                fee_policy=FeeCalculationPolicy.PERCENT_FEE,
+            )
+        )
+        db.session.commit()
+        self.original_crypto_instances = dict(Crypto.instances)
+        Crypto.instances["BTC"] = type(
+            "FakeCrypto",
+            (),
+            {"precision": 8, "wallet": type("FakeWallet", (), {"apikey": "api-key"})()},
+        )()
+
+    def tearDown(self):
+        Crypto.instances.clear()
+        Crypto.instances.update(self.original_crypto_instances)
+        db.session.remove()
+        db.drop_all()
+        self.ctx.pop()
+
+    def make_tx(self, status=InvoiceStatus.PARTIAL):
+        invoice = Invoice(
+            external_id="user-1",
+            fiat="USD",
+            crypto="BTC",
+            addr="addr-1",
+            callback_url="http://callback.local",
+            amount_fiat=Decimal("1000"),
+            amount_crypto=Decimal("1"),
+            exchange_rate=Decimal("1000"),
+            balance_fiat=Decimal("150"),
+            balance_crypto=Decimal("0.15"),
+            status=status,
+        )
+        db.session.add(invoice)
+        db.session.commit()
+        db.session.add(
+            InvoiceAddress(invoice_id=invoice.id, crypto="BTC", addr=invoice.addr)
+        )
+        db.session.commit()
+        tx = Transaction(
+            invoice_id=invoice.id,
+            txid="tx-1",
+            crypto="BTC",
+            amount_crypto=Decimal("0.15"),
+            amount_fiat=Decimal("150"),
+            need_more_confirmations=False,
+        )
+        db.session.add(tx)
+        db.session.commit()
+        return tx
+
+    def add_check(self, tx, decision="credit", reason="score_below_threshold"):
+        check = AmlCheck(
+            transaction_id=tx.id,
+            deposit_id=f"shkeeper-tx-{tx.id}",
+            idempotency_key=f"BTC:{tx.txid}:shkeeper-tx-{tx.id}",
+            provider="amlbot",
+            provider_status="success",
+            status=AmlStatus.APPROVED
+            if decision == "credit"
+            else AmlStatus.MANUAL_REVIEW,
+            deposit_decision=decision,
+            decision_reason=reason,
+            score=Decimal("0.04") if decision == "credit" else Decimal("0.72"),
+            threshold=Decimal("0.10"),
+            uid="amlbot-check-id",
+            asset="BTC",
+            network="BTC",
+            signals_json='{"mixer": 0.01}',
+        )
+        db.session.add(check)
+        db.session.commit()
+        return check
+
+    def test_approved_callback_contains_aml_fields(self):
+        tx = self.make_tx()
+        self.add_check(tx)
+
+        payload = build_payment_notification(tx)
+        trigger = payload["transactions"][0]
+
+        self.assertEqual(trigger["deposit_decision"], "credit")
+        self.assertEqual(trigger["decision_reason"], "score_below_threshold")
+        self.assertEqual(trigger["aml"]["provider"], "amlbot")
+        self.assertEqual(trigger["aml"]["signals"], {"mixer": 0.01})
+
+    def test_skipped_callback_contains_cumulative_metadata(self):
+        tx = self.make_tx()
+        check = self.add_check(tx)
+        check.status = AmlStatus.SKIPPED
+        check.provider_status = None
+        check.score = None
+        check.decision_reason = "amount_below_aml_threshold"
+        check.skip_reason = "amount_below_threshold"
+        check.min_check_amount_fiat = Decimal("100")
+        check.cumulative_window = "24h"
+        check.cumulative_amount_fiat = Decimal("50")
+        check.cumulative_limit_fiat = Decimal("300")
+        db.session.commit()
+
+        trigger = build_payment_notification(tx)["transactions"][0]
+
+        self.assertIsNone(trigger["aml"]["score"])
+        self.assertEqual(trigger["aml"]["cumulative_limit_fiat"], "300")
+        self.assertEqual(trigger["decision_reason"], "amount_below_aml_threshold")
+
+    def test_manual_review_callback_contains_reason(self):
+        tx = self.make_tx()
+        self.add_check(
+            tx,
+            decision=DepositDecision.MANUAL_REVIEW,
+            reason="risk_score_above_threshold",
+        )
+
+        trigger = build_payment_notification(tx)["transactions"][0]
+
+        self.assertEqual(trigger["deposit_decision"], "manual_review")
+        self.assertEqual(trigger["decision_reason"], "risk_score_above_threshold")
+
+    def test_static_address_partial_invoice_can_credit_trigger_transaction(self):
+        tx = self.make_tx(status=InvoiceStatus.PARTIAL)
+        self.add_check(tx)
+
+        payload = build_payment_notification(tx)
+
+        self.assertFalse(payload["paid"])
+        self.assertEqual(payload["status"], "PARTIAL")
+        self.assertEqual(payload["transactions"][0]["deposit_decision"], "credit")
+
+    def test_retry_payload_is_stable(self):
+        tx = self.make_tx()
+        self.add_check(tx)
+
+        first = build_payment_notification(tx)
+        second = build_payment_notification(tx)
+
+        self.assertEqual(first, second)
+
+    def test_unconfirmed_callback_has_no_aml_decision_fields(self):
+        tx = self.make_tx()
+        utx = UnconfirmedTransaction(
+            invoice_id=tx.invoice_id,
+            addr="addr-1",
+            txid="unconfirmed-tx",
+            crypto="BTC",
+            amount_crypto=Decimal("0.01"),
+        )
+        db.session.add(utx)
+        db.session.commit()
+        captured = {}
+
+        class Response:
+            status_code = 202
+
+        import shkeeper.callback as callback_module
+
+        original_post = callback_module.requests.post
+        callback_module.requests.post = lambda *args, **kwargs: captured.update(
+            kwargs["json"]
+        ) or Response()
+        try:
+            self.assertTrue(send_unconfirmed_notification(utx))
+        finally:
+            callback_module.requests.post = original_post
+
+        self.assertNotIn("deposit_decision", captured)
+        self.assertNotIn("decision_reason", captured)
+        self.assertNotIn("aml", captured)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -5,11 +5,13 @@ from flask_apscheduler import APScheduler
 from shkeeper import scheduler, callback
 from shkeeper.modules.classes.crypto import Crypto
 from shkeeper.models import *
+from shkeeper.services.aml_processing import process_pending_aml_checks
 
 @scheduler.task("interval", id="callback", seconds=60)
 def task_callback():
     with scheduler.app.app_context():
         callback.update_confirmations()
+        process_pending_aml_checks()
         callback.send_callbacks()
 
 @scheduler.task("interval", id="pending_payouts", seconds=60)

@@ -71,7 +71,6 @@ def build_idempotency_key(tx):
 
 def _base_check(tx):
     return AmlCheck(
-        transaction=tx,
         transaction_id=tx.id,
         deposit_id=build_deposit_id(tx),
         idempotency_key=build_idempotency_key(tx),
