@@ -6,7 +6,7 @@
 
 ## Goal
 
-Every confirmed SHKeeper deposit for every enabled cryptocurrency receives a transaction-level AML policy decision before `grither-pay` can credit a user balance: above-threshold deposits are checked through AMLBot, below-threshold deposits may be explicitly skipped for unit economics, and `grither-pay` makes the final credit or manual-review decision from the AML-enriched callback.
+Every confirmed SHKeeper deposit for every enabled cryptocurrency receives a transaction-level AML policy decision before `grither-pay` can credit a user balance: above-threshold deposits are checked through AMLBot via the `aml-shkeeper` sidecar, below-threshold deposits may be explicitly skipped by SHKeeper for unit economics, and `grither-pay` makes the final credit or manual-review decision from the AML-enriched callback.
 
 ## Background
 
@@ -20,6 +20,17 @@ AMLBot public API documentation states that transaction checks return `success` 
 
 The AML policy intentionally allows an economic de-minimis bypass for small deposits. This must be represented as an explicit `aml.status: "skipped"` outcome, not as a fake AMLBot score of `0`. To prevent users from avoiding AML by splitting deposits, skipped deposits must be bounded by rolling cumulative limits per user/address/crypto.
 
+## Architecture Decisions
+
+| Finding | Decision | Rationale |
+|---------|----------|-----------|
+| SPEC did not lock embedded vs sidecar AMLBot client | Use the existing `aml-shkeeper` sidecar architecture and productionize it. | Keeps AMLBot credentials, provider polling, and raw provider evidence isolated from SHKeeper while reusing the existing work. |
+| De-minimis cumulative limits need user/static-address context | SHKeeper owns de-minimis and cumulative skip decisions. `aml-shkeeper` is not called for skipped deposits. | SHKeeper has `external_id`, invoice/address, fiat conversion, transaction identity, and callback context; `aml-shkeeper` currently has only hash/account/amount/symbol. |
+| `aml-shkeeper` idempotency is txid-only today | `aml-shkeeper` must accept and persist a SHKeeper deposit identifier and enforce idempotency by `(provider, crypto, txid, address, shkeeper_transaction_id)` or stricter equivalent. Duplicate check requests return the existing check instead of an error. | Provider checks and retries must be safe across duplicate wallet notifications, multi-output transactions, and scheduler retries. |
+| Raw AMLBot evidence is not persisted today | `aml-shkeeper` owns full provider evidence storage: raw response, provider UID, provider status, score, asset, network, signals, report URL, errors, attempts, timestamps. SHKeeper stores a local snapshot sufficient for callback retry and audit. | `grither-pay` should receive enough context in callback, and SHKeeper must be able to retry a stable payload even if `aml-shkeeper` is temporarily unavailable. |
+| Callback payload lacks stable deposit id | Add a stable `deposit_id` and `idempotency_key` to the trigger transaction. | `grither-pay` needs deterministic idempotency for wallet crediting; relying only on `txid` is weaker for multi-asset and multi-output edge cases. |
+| Unconfirmed callback behavior is unspecified | Keep optional unconfirmed callbacks as observability-only events; they never contain `deposit_decision` and must never be creditable. | Preserves SHKeeper behavior while preventing premature credit before confirmation and AML policy decision. |
+
 ## Requirements
 
 1. **AMLBot-only provider policy**: Deposit AML must use AMLBot only.
@@ -29,7 +40,7 @@ The AML policy intentionally allows an economic de-minimis bypass for small depo
 
 2. **All enabled deposit cryptos are policy-gated**: Every confirmed incoming `receive` transaction for every enabled SHKeeper crypto must receive an AML policy terminal decision before the payment callback can be accepted as creditable by `grither-pay`.
    - Current: `walletnotify` sends a callback after enough confirmations without AML.
-   - Target: BTC, LTC, DOGE, ETH family, TRX/TRC20, BNB/BEP20, Polygon, Avalanche, Solana, XRP, Arbitrum, Optimism, TON, FIRO, Monero, Lightning, and any future enabled crypto are covered by one of: AMLBot check, explicit de-minimis skip, or fail-closed `manual_review`.
+   - Target: BTC, LTC, DOGE, ETH family, TRX/TRC20, BNB/BEP20, Polygon, Avalanche, Solana, XRP, Arbitrum, Optimism, TON, FIRO, Monero, Lightning, and any future enabled crypto are covered by one of: AMLBot check through `aml-shkeeper`, explicit SHKeeper de-minimis skip, or fail-closed `manual_review`.
    - Acceptance: For each enabled crypto in `Crypto.instances`, a confirmed incoming transaction cannot produce a callback with `deposit_decision: "credit"` unless either an AMLBot success result with a usable risk score has been recorded or the transaction qualifies for the configured de-minimis skip policy.
 
 3. **Transaction-level decisions**: AML state and credit/manual-review decisions must be attached to the individual deposit transaction, not to the invoice as a whole.
@@ -64,7 +75,7 @@ The AML policy intentionally allows an economic de-minimis bypass for small depo
 
 9. **AML payload contains provider evidence or explicit skip metadata**: The trigger transaction must include enough AMLBot evidence or skip metadata for `grither-pay` and operators to understand the decision without querying SHKeeper.
    - Current: Callback transactions include txid, date, amounts, trigger, and crypto only.
-   - Target: The trigger transaction includes an `aml` object with `provider`, `provider_status`, `status`, `score`, `threshold`, `uid`, `asset`, `network`, `signals`, and optional report/error/skip metadata when available. For skipped checks, `score` is null and the payload includes `skip_reason`, configured per-transaction threshold, rolling cumulative window, and cumulative amount used for the decision.
+   - Target: The trigger transaction includes stable `deposit_id` and `idempotency_key` fields plus an `aml` object with `provider`, `provider_status`, `status`, `score`, `threshold`, `uid`, `asset`, `network`, `signals`, and optional report/error/skip metadata when available. For skipped checks, `score` is null and the payload includes `skip_reason`, configured per-transaction threshold, rolling cumulative window, and cumulative amount used for the decision.
    - Acceptance: A successful AMLBot check with a risk score produces a callback whose `aml.uid`, `aml.score`, `aml.threshold`, and `aml.signals` match the normalized AMLBot response stored for the transaction; a skipped check produces `aml.status: "skipped"` and no fake score.
 
 10. **Score policy is explicit and fail-closed**: Auto-credit is allowed only when AMLBot returns a successful, complete result and the risk score is within the configured threshold.
@@ -72,14 +83,14 @@ The AML policy intentionally allows an economic de-minimis bypass for small depo
     - Target: For AMLBot-checked deposits, `score <= AML_MAX_ACCEPT_SCORE` resolves to `deposit_decision: "credit"` with `decision_reason: "score_below_threshold"`; any higher score, missing score, provider error, timeout, unsupported asset, or incomplete result resolves to `manual_review`.
     - Acceptance: Tests cover below-threshold, equal-threshold, above-threshold, pending timeout, provider error, unsupported asset, and missing-score cases.
 
-11. **De-minimis skip is explicit and bounded**: Small deposits may bypass AMLBot calls for economic reasons only when the configured per-transaction and rolling cumulative thresholds allow it.
+11. **De-minimis skip is explicit and bounded by SHKeeper**: Small deposits may bypass AMLBot calls for economic reasons only when the configured per-transaction and rolling cumulative thresholds allow it.
     - Current: The standalone `aml-shkeeper` service has a min-check shortcut that stores score `0` for small transactions, which makes skipped checks look like successful zero-risk AML checks.
-    - Target: Below-threshold deposits use `deposit_decision: "credit"`, `decision_reason: "amount_below_aml_threshold"`, `aml.status: "skipped"`, and `aml.score: null` only if the rolling cumulative amount for the same user/address/crypto remains below the configured cumulative limit. If the cumulative limit is exceeded, the deposit must be AMLBot-checked or routed to `manual_review`.
+    - Target: SHKeeper computes the de-minimis and rolling cumulative decision before calling `aml-shkeeper`. Below-threshold deposits use `deposit_decision: "credit"`, `decision_reason: "amount_below_aml_threshold"`, `aml.status: "skipped"`, and `aml.score: null` only if the rolling cumulative amount for the same user/address/crypto remains below the configured cumulative limit. If the cumulative limit is exceeded, the deposit must be AMLBot-checked through `aml-shkeeper` or routed to `manual_review`.
     - Acceptance: Tests cover a single small deposit under threshold, repeated small deposits under the cumulative limit, repeated small deposits that exceed the cumulative limit, and skipped deposits with no fake score.
 
 12. **AMLBot pending and timing behavior is handled**: Pending AMLBot results must be retried without blocking the scheduler indefinitely.
     - Current: SHKeeper has a 60-second scheduler loop for confirmation and callback retry, but no AML polling lifecycle.
-    - Target: AML checks store attempt count, next retry time, last provider status, provider UID when available, and timeout deadline; pending checks are retried or rechecked until success, provider failure, or timeout.
+    - Target: `aml-shkeeper` stores provider attempts, raw response, provider UID, next retry time, last provider status, and timeout deadline; SHKeeper stores a local `AmlCheck` snapshot and polls or refreshes it until success, provider failure, or timeout.
     - Acceptance: A pending result is retried according to configured intervals, and after timeout it produces a single `manual_review` callback with `decision_reason: "aml_pending_timeout"`.
 
 13. **AMLBot asset coverage is explicit**: Every SHKeeper crypto symbol must map to an AMLBot asset/network policy or to an explicit unsupported/manual-review policy.
@@ -89,7 +100,7 @@ The AML policy intentionally allows an economic de-minimis bypass for small depo
 
 14. **Idempotency and retry safety**: Duplicate sidecar notifications, scheduler retries, and callback retries must not double-credit or create conflicting AML checks.
     - Current: `Transaction` uniqueness prevents duplicate transactions in normal paths, and callback retry uses `callback_confirmed`, but AML adds another async step.
-    - Target: AML check creation and callback emission are idempotent per transaction; retries reuse the same AML record and callback payload until the merchant returns HTTP 202.
+    - Target: AML check creation and callback emission are idempotent per transaction across both SHKeeper and `aml-shkeeper`; retries reuse the same AML record and callback payload until the merchant returns HTTP 202. Duplicate `aml-shkeeper` check requests for the same provider/crypto/txid/address/SHKeeper transaction return the existing check state instead of creating a conflicting row or returning a hard error.
     - Acceptance: Replaying the same `walletnotify` and callback retry sequence does not create a second terminal AML record and does not produce a second distinct creditable callback for the same transaction.
 
 15. **grither-pay owns balance credit and manual review**: SHKeeper must not credit user balances, implement manual deposit review UI, or decide grither-pay wallet state directly.
@@ -113,6 +124,8 @@ The final payment callback keeps the current SHKeeper top-level payload and exte
   "status": "PARTIAL",
   "transactions": [
     {
+      "deposit_id": "shkeeper-tx-98765",
+      "idempotency_key": "USDT:new-tx-hash:shkeeper-tx-98765",
       "txid": "new-tx-hash",
       "date": "2026-05-01 12:00:00",
       "amount_crypto": "100.000000",
@@ -147,6 +160,8 @@ Manual-review example for a risky transaction:
 
 ```json
 {
+  "deposit_id": "shkeeper-tx-98765",
+  "idempotency_key": "USDT:new-tx-hash:shkeeper-tx-98765",
   "txid": "new-tx-hash",
   "date": "2026-05-01 12:00:00",
   "amount_crypto": "100.000000",
@@ -179,6 +194,8 @@ Skipped example for an economically small transaction:
 
 ```json
 {
+  "deposit_id": "shkeeper-tx-98766",
+  "idempotency_key": "USDT:small-tx-hash:shkeeper-tx-98766",
   "txid": "small-tx-hash",
   "date": "2026-05-01 12:05:00",
   "amount_crypto": "3.000000",
@@ -213,11 +230,13 @@ Skipped example for an economically small transaction:
 **In scope:**
 - Deposit AML policy gating for confirmed incoming SHKeeper transactions.
 - AMLBot as the only AML provider for this feature.
+- Productionizing the existing `aml-shkeeper` sidecar as the AMLBot adapter service.
 - Transaction-level AML lifecycle and terminal deposit decisions.
 - Callback payload extension for the trigger transaction.
 - Support policy for all enabled SHKeeper crypto symbols through AMLBot mapping, explicit de-minimis skip, or fail-closed manual review.
 - Configurable per-transaction minimum check amount and rolling cumulative threshold for skipped checks.
-- Persistence and migration for AML result, decision, raw provider evidence, attempts, errors, and timestamps.
+- SHKeeper-local persistence and migration for AML result snapshots, policy decision, callback retry state, and audit fields.
+- `aml-shkeeper` persistence for provider UID, provider status, raw AMLBot response, signals, report links, attempts, errors, and timestamps.
 - Scheduler or background processing needed to poll pending AML results and send callbacks after terminal decision.
 - Tests or verification fixtures for callback payload, decision policy, static-address flow, idempotency, and crypto coverage.
 - Documentation of the callback contract consumed by `grither-pay`.
@@ -236,29 +255,37 @@ Skipped example for an economically small transaction:
 
 - SHKeeper is a Flask monolith with SQLite, SQLAlchemy, Alembic migrations, and APScheduler in-process background jobs.
 - Existing merchant callback retry semantics must remain: receiver returns HTTP 202, otherwise SHKeeper retries.
+- Optional unconfirmed callbacks are observability-only and must not contain `deposit_decision`, `decision_reason`, or a creditable AML result.
 - The feature must work with static-address invoices where `paid` may remain false and `status` may remain `PARTIAL`.
 - AMLBot transaction checks can return `pending`; the system must tolerate delayed AML completion.
 - AMLBot documentation advises waiting about 5 minutes after first confirmation for up-to-date check data; implementation planning must decide whether to delay initial check, poll, or both.
 - Some AMLBot networks have limited analysis coverage. Limited, unsupported, or incomplete coverage must be visible in `aml` metadata and must not silently auto-credit unless an explicit configured policy allows it.
 - De-minimis skip thresholds must be configured in fiat terms or another consistent normalized value; rolling cumulative limits must be computed against the same identity used by `grither-pay` to attribute deposits, such as `external_id` or the static deposit address.
 - Skipped checks must never store or emit a risk score of `0`; skipped means "not checked", not "zero risk".
+- Above-threshold AMLBot checks must be routed through `aml-shkeeper`; SHKeeper must not contain a parallel direct AMLBot runtime path unless a later phase explicitly changes the architecture decision.
+- `aml-shkeeper` and SHKeeper must share a stable deposit identifier or idempotency key for every above-threshold AML check.
 - Secrets must be environment/config driven and must not be stored in source control.
 - Callback payloads must remain JSON serializable with decimal values encoded consistently with existing SHKeeper callbacks.
 
 ## Acceptance Criteria
 
 - [ ] A confirmed deposit cannot trigger the final payment callback before the AML policy reaches a terminal `credit` or `manual_review` decision.
-- [ ] The trigger transaction in every final callback contains `deposit_decision`, `decision_reason`, and `aml`.
+- [ ] Above-threshold AMLBot checks are performed through `aml-shkeeper`, not through direct AMLBot calls embedded in SHKeeper.
+- [ ] The trigger transaction in every final callback contains `deposit_id`, `idempotency_key`, `deposit_decision`, `decision_reason`, and `aml`.
 - [ ] `deposit_decision` is only `credit` or `manual_review`.
 - [ ] `score <= AML_MAX_ACCEPT_SCORE` with AMLBot `success` and a usable score produces `deposit_decision: "credit"`.
 - [ ] A below-threshold deposit within cumulative limits can produce `deposit_decision: "credit"` only with `aml.status: "skipped"`, `aml.score: null`, and `decision_reason: "amount_below_aml_threshold"`.
 - [ ] Repeated small deposits that exceed the configured cumulative limit are AMLBot-checked or routed to `manual_review`.
+- [ ] SHKeeper owns de-minimis and cumulative skip decisions; skipped deposits do not call `aml-shkeeper`.
 - [ ] Above-threshold score, provider error, timeout, unsupported asset, limited-analysis-required review, and incomplete result each produce `deposit_decision: "manual_review"`.
+- [ ] `aml-shkeeper` stores and returns provider UID, provider status, raw response, signals, report URL when available, attempts, errors, and timestamps.
 - [ ] Existing callback top-level fields and existing transaction amount fields remain present.
+- [ ] Optional unconfirmed callbacks are never creditable and do not include AML approval fields.
 - [ ] Static-address invoices can remain `PARTIAL` while the trigger transaction is still creditable.
 - [ ] Multiple deposits to the same invoice/address are evaluated and callbacked independently.
 - [ ] Coverage validation fails if an enabled SHKeeper crypto has no AMLBot mapping and no explicit unsupported/manual-review policy.
 - [ ] Duplicate `walletnotify` or scheduler retries do not create duplicate terminal AML decisions for the same transaction.
+- [ ] Duplicate `aml-shkeeper` check requests for the same SHKeeper deposit return the existing AML check state instead of a hard duplicate error.
 - [ ] Callback retries send a stable payload until `grither-pay` returns HTTP 202.
 - [ ] No SHKeeper admin UI manual-review workflow is added.
 - [ ] No re:Fee AML runtime path is used.
@@ -268,9 +295,9 @@ Skipped example for an economically small transaction:
 | Dimension           | Score | Min   | Status | Notes |
 |---------------------|-------|-------|--------|-------|
 | Goal Clarity        | 0.91  | 0.75  | PASS   | Outcome is transaction-level AML policy gating before grither-pay credit. |
-| Boundary Clarity    | 0.91  | 0.70  | PASS   | Provider, SHKeeper role, grither-pay role, and out-of-scope UI/payout work are explicit. |
-| Constraint Clarity  | 0.84  | 0.65  | PASS   | Static-address, callback retry, AMLBot pending, de-minimis skip, cumulative thresholds, and crypto coverage constraints are captured. |
-| Acceptance Criteria | 0.87  | 0.70  | PASS   | Callback, score policy, skip policy, idempotency, and coverage checks are pass/fail. |
+| Boundary Clarity    | 0.94  | 0.70  | PASS   | `aml-shkeeper`, SHKeeper, and `grither-pay` responsibilities are explicit. |
+| Constraint Clarity  | 0.87  | 0.65  | PASS   | Static-address, callback retry, AMLBot pending, sidecar idempotency, de-minimis skip, cumulative thresholds, and crypto coverage constraints are captured. |
+| Acceptance Criteria | 0.89  | 0.70  | PASS   | Callback, sidecar, score policy, skip policy, idempotency, and coverage checks are pass/fail. |
 | **Ambiguity**       | 0.11  | <=0.20| PASS   | Ready for discuss-phase / implementation planning. |
 
 Status: PASS = met minimum, WARN = below minimum.
@@ -281,7 +308,7 @@ Status: PASS = met minimum, WARN = below minimum.
 |-------|-------------|------------------|-----------------|
 | 1 | Researcher | Is there an existing AML integration to reuse? | `upstream/custom_aml2` is a reference only, not ready to merge or use as-is. |
 | 1 | Researcher | Which AML provider is allowed? | AML must use AMLBot only; re:Fee AML is excluded. |
-| 2 | Simplifier | What is the simplest correct SHKeeper responsibility? | SHKeeper receives deposit, performs AMLBot check, and sends an AML-enriched callback to `grither-pay`. |
+| 2 | Simplifier | What is the simplest correct SHKeeper responsibility? | SHKeeper receives deposit, applies AML policy, uses `aml-shkeeper` for above-threshold AMLBot checks, and sends an AML-enriched callback to `grither-pay`. |
 | 2 | Simplifier | Who decides user balance crediting? | `grither-pay` credits only approved deposits and routes every other result to manual review. |
 | 3 | Boundary Keeper | Should SHKeeper admin UI handle manual review? | No. Manual deposit review belongs in `grither-pay`, not SHKeeper admin. |
 | 3 | Boundary Keeper | Does invoice `paid` decide crediting in static-address mode? | No. `grither-pay` must process the trigger transaction, not invoice aggregate state. |
@@ -289,6 +316,10 @@ Status: PASS = met minimum, WARN = below minimum.
 | 4 | Failure Analyst | What should the callback expose? | Preserve existing callback fields and add `deposit_decision`, `decision_reason`, and `aml` to the trigger transaction. |
 | 5 | Seed Closer | What does all-crypto AML mean when AMLBot support is partial or unavailable? | Every enabled crypto is covered by mapping, explicit de-minimis skip, or fail-closed manual review; no above-threshold deposit bypasses AML policy gating. |
 | 6 | Policy Update | Should tiny deposits be AMLBot-checked? | Small deposits may skip AMLBot for unit economics, but only as explicit `aml.status: "skipped"` with cumulative anti-splitting controls. |
+| 7 | Architecture Review | Should AMLBot calls be embedded or sidecar-based? | Use and productionize `aml-shkeeper` for provider calls; SHKeeper owns policy, local snapshot, and callbacks. |
+| 7 | Architecture Review | Where should cumulative skip be computed? | SHKeeper computes de-minimis/cumulative skip because it owns invoice, fiat, static address, and external_id context. |
+| 7 | Architecture Review | How should grither-pay dedupe credits? | Callback trigger transactions include stable `deposit_id` and `idempotency_key`. |
+| 7 | Architecture Review | What happens to unconfirmed callbacks? | They remain optional observability events and are never creditable. |
 
 ---
 
