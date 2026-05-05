@@ -104,7 +104,7 @@ class AmlCallbackPayloadTestCase(unittest.TestCase):
             transaction_id=tx.id,
             deposit_id=f"shkeeper-tx-{tx.id}",
             idempotency_key=f"BTC:{tx.txid}:shkeeper-tx-{tx.id}",
-            provider="amlbot",
+            provider="koinkyt",
             provider_status="success",
             status=AmlStatus.APPROVED
             if decision == "credit"
@@ -113,7 +113,7 @@ class AmlCallbackPayloadTestCase(unittest.TestCase):
             decision_reason=reason,
             score=Decimal("0.04") if decision == "credit" else Decimal("0.72"),
             threshold=Decimal("0.10"),
-            uid="amlbot-check-id",
+            uid="koinkyt-check-id",
             asset="BTC",
             network="BTC",
             signals_json='{"mixer": 0.01}',
@@ -131,7 +131,7 @@ class AmlCallbackPayloadTestCase(unittest.TestCase):
 
         self.assertEqual(trigger["deposit_decision"], "credit")
         self.assertEqual(trigger["decision_reason"], "score_below_threshold")
-        self.assertEqual(trigger["aml"]["provider"], "amlbot")
+        self.assertEqual(trigger["aml"]["provider"], "koinkyt")
         self.assertEqual(trigger["aml"]["signals"], {"mixer": 0.01})
 
     def test_skipped_callback_contains_cumulative_metadata(self):

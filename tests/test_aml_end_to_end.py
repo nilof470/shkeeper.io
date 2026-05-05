@@ -132,7 +132,7 @@ class AmlEndToEndTestCase(unittest.TestCase):
             transaction_id=tx.id,
             deposit_id=f"shkeeper-tx-{tx.id}",
             idempotency_key=f"BTC:{tx.txid}:shkeeper-tx-{tx.id}",
-            provider="amlbot",
+            provider="koinkyt",
             status=AmlStatus.CHECKING,
             provider_status="pending",
         )
@@ -142,7 +142,7 @@ class AmlEndToEndTestCase(unittest.TestCase):
             "provider_status": "success",
             "status": "ready",
             "score": "0.04",
-            "uid": "amlbot-check-id",
+            "uid": "koinkyt-check-id",
         }
         captured = {}
         callback_module.requests.post = lambda *args, **kwargs: captured.update(
@@ -161,7 +161,7 @@ class AmlEndToEndTestCase(unittest.TestCase):
             transaction_id=tx.id,
             deposit_id=f"shkeeper-tx-{tx.id}",
             idempotency_key=f"BTC:{tx.txid}:shkeeper-tx-{tx.id}",
-            provider="amlbot",
+            provider="koinkyt",
             status=AmlStatus.CHECKING,
             provider_status="pending",
         )

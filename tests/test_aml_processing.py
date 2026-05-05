@@ -103,11 +103,11 @@ class AmlProcessingTestCase(unittest.TestCase):
         self.assertEqual(check.deposit_decision, DepositDecision.MANUAL_REVIEW)
         self.assertEqual(check.decision_reason, "limited_analysis_requires_review")
 
-    def test_skip_does_not_call_sidecar(self):
+    def test_skip_does_not_call_provider(self):
         tx = self.make_tx("50")
 
         def fail_create(*args, **kwargs):
-            raise AssertionError("sidecar must not be called for skipped deposits")
+            raise AssertionError("provider must not be called for skipped deposits")
 
         aml_processing.AmlShkeeperClient.create_check = fail_create
 
@@ -138,7 +138,7 @@ class AmlProcessingTestCase(unittest.TestCase):
             transaction_id=tx.id,
             deposit_id=f"shkeeper-tx-{tx.id}",
             idempotency_key=f"BTC:{tx.txid}:shkeeper-tx-{tx.id}",
-            provider="amlbot",
+            provider="koinkyt",
             status=AmlStatus.CHECKING,
             provider_status="pending",
         )
@@ -153,7 +153,7 @@ class AmlProcessingTestCase(unittest.TestCase):
             transaction_id=tx.id,
             deposit_id=f"shkeeper-tx-{tx.id}",
             idempotency_key=f"BTC:{tx.txid}:shkeeper-tx-{tx.id}",
-            provider="amlbot",
+            provider="koinkyt",
             status=AmlStatus.CHECKING,
             provider_status="pending",
             timeout_at=datetime.utcnow() - timedelta(seconds=1),
@@ -165,6 +165,29 @@ class AmlProcessingTestCase(unittest.TestCase):
 
         self.assertEqual(check.deposit_decision, DepositDecision.MANUAL_REVIEW)
         self.assertEqual(check.decision_reason, "aml_pending_timeout")
+        self.assertEqual(check.provider_status, "timeout")
+
+    def test_explicit_amlbot_provider_sends_legacy_asset_to_sidecar(self):
+        self.app.config["AML_PROVIDER"] = "amlbot"
+        calls = []
+
+        def create_check(client, payload):
+            calls.append(payload)
+            return {
+                "provider": "amlbot",
+                "provider_status": "pending",
+                "status": "pending",
+            }
+
+        aml_processing.AmlShkeeperClient.create_check = create_check
+        tx = self.make_tx("150", crypto="DOGE")
+
+        check = aml_processing.ensure_aml_for_transaction(tx)
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["crypto"], "DOGE")
+        self.assertEqual(check.provider, "amlbot")
+        self.assertEqual(check.status, AmlStatus.CHECKING)
 
     def test_duplicate_ensure_reuses_same_aml_check(self):
         tx = self.make_tx("50")

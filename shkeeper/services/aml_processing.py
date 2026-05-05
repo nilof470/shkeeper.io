@@ -89,7 +89,7 @@ def _pending_check(tx, coverage):
         transaction_id=tx.id,
         deposit_id=build_deposit_id(tx),
         idempotency_key=build_idempotency_key(tx),
-        provider="amlbot",
+        provider=coverage["provider"],
         provider_status="pending",
         status=AmlStatus.PENDING,
         asset=coverage["asset"],
@@ -121,7 +121,7 @@ def _resolve_timeout(check):
     check.status = AmlStatus.MANUAL_REVIEW
     check.deposit_decision = DepositDecision.MANUAL_REVIEW
     check.decision_reason = "aml_pending_timeout"
-    check.provider_status = check.provider_status or "timeout"
+    check.provider_status = "timeout"
     check.next_retry_at = None
     db.session.add(check)
     db.session.commit()

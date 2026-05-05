@@ -18,6 +18,16 @@ class AmlShkeeperClient:
     def get_check(self, deposit_id):
         return self._request("get", f"/api/v1/checks/{deposit_id}")
 
+    def _error(self, status, error_code, error_message, raw_response=None):
+        return {
+            "status": status,
+            "provider_status": "error",
+            "error_source": "aml-shkeeper",
+            "error_code": error_code,
+            "error_message": error_message,
+            "raw_response": raw_response,
+        }
+
     def _request(self, method, path, **kwargs):
         url = f"{self.host}{path}"
         request = requests.post if method == "post" else requests.get
@@ -26,24 +36,24 @@ class AmlShkeeperClient:
             try:
                 data = response.json()
             except ValueError:
-                data = {
-                    "status": "error",
-                    "provider": "amlbot",
-                    "provider_status": "error",
-                    "error_code": "invalid_json",
-                    "error_message": response.text,
-                }
+                data = self._error(
+                    "error",
+                    "invalid_json",
+                    response.text,
+                    raw_response=response.text,
+                )
+            if not isinstance(data, dict):
+                data = self._error(
+                    "error",
+                    "invalid_json_shape",
+                    "aml-shkeeper returned non-object JSON",
+                    raw_response=data,
+                )
             if response.status_code >= 400:
-                data.setdefault("provider", "amlbot")
                 data.setdefault("provider_status", "error")
+                data.setdefault("error_source", "aml-shkeeper")
                 data.setdefault("error_code", f"http_{response.status_code}")
                 data.setdefault("error_message", response.text)
             return data
         except requests.RequestException as exc:
-            return {
-                "status": "transport_error",
-                "provider": "amlbot",
-                "provider_status": "error",
-                "error_code": "transport_error",
-                "error_message": str(exc),
-            }
+            return self._error("transport_error", "transport_error", str(exc))

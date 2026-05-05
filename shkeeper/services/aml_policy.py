@@ -51,6 +51,35 @@ def _signals_json(value):
     return json.dumps(value, sort_keys=True)
 
 
+def _signals_dict(value):
+    if not value:
+        return {}
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except ValueError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _has_alerts(signals):
+    alerts = signals.get("alerts")
+    if alerts in (None, "", [], {}):
+        return False
+    return True
+
+
+def _is_true(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.lower() in ("1", "true", "yes")
+    return bool(value)
+
+
 def _datetime(value):
     if value is None or isinstance(value, datetime):
         return value
@@ -70,11 +99,12 @@ def build_idempotency_key(tx):
 
 
 def _base_check(tx):
+    policy = get_coverage_policy(tx.crypto)
     return AmlCheck(
         transaction_id=tx.id,
         deposit_id=build_deposit_id(tx),
         idempotency_key=build_idempotency_key(tx),
-        provider="amlbot",
+        provider=policy.get("provider") or "koinkyt",
         threshold=_config_decimal("AML_MAX_ACCEPT_SCORE", AML_MAX_ACCEPT_SCORE),
     )
 
@@ -152,6 +182,7 @@ def unsupported_check(tx):
     check.status = AmlStatus.MANUAL_REVIEW
     check.deposit_decision = DepositDecision.MANUAL_REVIEW
     check.decision_reason = policy.get("reason") or "unsupported_asset"
+    check.provider = policy.get("provider") or check.provider
     check.asset = policy.get("asset")
     check.network = policy.get("network")
     return check
@@ -163,21 +194,23 @@ def decision_from_provider_result(tx, result):
         return unsupported_check(tx)
 
     check = _base_check(tx)
+    check.provider = result.get("provider") or policy.get("provider") or "koinkyt"
     check.provider_status = result.get("provider_status")
     check.status = AmlStatus.CHECKING
-    check.score = _decimal(result.get("score"))
+    check.score = _decimal(result.get("score") or result.get("risk_score"))
     check.threshold = _config_decimal("AML_MAX_ACCEPT_SCORE", AML_MAX_ACCEPT_SCORE)
     check.uid = result.get("uid")
     check.asset = result.get("asset") or policy.get("asset")
     check.network = result.get("network") or policy.get("network")
     check.signals_json = _signals_json(result.get("signals"))
-    check.raw_response_json = _signals_json(result)
+    check.raw_response_json = _signals_json(result.get("raw_response") or result)
     check.report_url = result.get("report_url")
     check.error_code = result.get("error_code")
     check.error_message = result.get("error_message")
     check.attempts = int(result.get("attempts") or 0)
     check.next_retry_at = _datetime(result.get("next_retry_at"))
     check.timeout_at = _datetime(result.get("timeout_at"))
+    signals = _signals_dict(result.get("signals"))
 
     status = result.get("status")
     provider_status = result.get("provider_status")
@@ -185,6 +218,10 @@ def decision_from_provider_result(tx, result):
         check.status = AmlStatus.MANUAL_REVIEW
         check.deposit_decision = DepositDecision.MANUAL_REVIEW
         check.decision_reason = "aml_pending_timeout"
+    elif check.error_code == "missing_risk_score":
+        check.status = AmlStatus.MANUAL_REVIEW
+        check.deposit_decision = DepositDecision.MANUAL_REVIEW
+        check.decision_reason = "incomplete_aml_result"
     elif status == "failed" or provider_status == "error":
         check.status = AmlStatus.MANUAL_REVIEW
         check.deposit_decision = DepositDecision.MANUAL_REVIEW
@@ -199,6 +236,14 @@ def decision_from_provider_result(tx, result):
         check.status = AmlStatus.MANUAL_REVIEW
         check.deposit_decision = DepositDecision.MANUAL_REVIEW
         check.decision_reason = "incomplete_aml_result"
+    elif _has_alerts(signals):
+        check.status = AmlStatus.MANUAL_REVIEW
+        check.deposit_decision = DepositDecision.MANUAL_REVIEW
+        check.decision_reason = "risk_profile_alert"
+    elif _is_true(signals.get("too_many_indirects")):
+        check.status = AmlStatus.MANUAL_REVIEW
+        check.deposit_decision = DepositDecision.MANUAL_REVIEW
+        check.decision_reason = "too_many_indirects"
     elif check.score <= check.threshold:
         check.status = AmlStatus.APPROVED
         check.deposit_decision = DepositDecision.CREDIT

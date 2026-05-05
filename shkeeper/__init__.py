@@ -94,6 +94,9 @@ def create_app(test_config=None):
         ),
         EXTRA_CURRENCIES=os.environ.get("EXTRA_CURRENCIES", ""),
         AML_ENABLED=_env_bool("AML_ENABLED", True),
+        AML_PROVIDER=os.environ.get(
+            "AML_PROVIDER", os.environ.get("CURRENT_PROVIDER", "koinkyt")
+        ),
         AML_SHKEEPER_HOST=os.environ.get(
             "AML_SHKEEPER_HOST", "http://aml-shkeeper:6000"
         ),

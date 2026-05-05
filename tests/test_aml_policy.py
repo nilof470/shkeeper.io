@@ -112,6 +112,52 @@ class AmlPolicyTestCase(unittest.TestCase):
         self.assertEqual(check.deposit_decision, "manual_review")
         self.assertEqual(check.decision_reason, "incomplete_aml_result")
 
+    def test_missing_risk_score_error_manual_review(self):
+        tx = self.make_tx("150")
+        check = decision_from_provider_result(
+            tx,
+            {
+                "provider_status": "error",
+                "error_code": "missing_risk_score",
+                "error_message": "Koinkyt response missing risk_score",
+            },
+        )
+        self.assertEqual(check.deposit_decision, "manual_review")
+        self.assertEqual(check.decision_reason, "incomplete_aml_result")
+
+    def test_risk_profile_alert_manual_review_even_with_low_score(self):
+        tx = self.make_tx("150")
+        check = decision_from_provider_result(
+            tx,
+            {
+                "provider_status": "success",
+                "score": "0.01",
+                "signals": {
+                    "alerts": [
+                        {
+                            "risk_profile": "strict profile",
+                            "risk_grade": "high",
+                        }
+                    ]
+                },
+            },
+        )
+        self.assertEqual(check.deposit_decision, "manual_review")
+        self.assertEqual(check.decision_reason, "risk_profile_alert")
+
+    def test_too_many_indirects_manual_review_even_with_low_score(self):
+        tx = self.make_tx("150")
+        check = decision_from_provider_result(
+            tx,
+            {
+                "provider_status": "success",
+                "score": "0.01",
+                "signals": {"too_many_indirects": True},
+            },
+        )
+        self.assertEqual(check.deposit_decision, "manual_review")
+        self.assertEqual(check.decision_reason, "too_many_indirects")
+
     def test_unsupported_asset_manual_review(self):
         tx = self.make_tx("150", crypto="BTC-LIGHTNING")
         check = decision_from_provider_result(

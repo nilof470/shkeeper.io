@@ -579,7 +579,7 @@ class UnconfirmedTransaction(db.Model):
         ).first()
         if not invoice_address:
             # Check address in Invoice table in case the instance was upgraded from older version that does not have InvoiceAddress table
-            invoice = Invoice.query.filter_by(addr=addr).first()
+            invoice = Invoice.query.filter_by(addr=addr, crypto=crypto_name).first()
         else:
             invoice = Invoice.query.filter_by(id=invoice_address.invoice_id).first()
 
@@ -686,12 +686,16 @@ class Transaction(db.Model):
 
     @classmethod
     def add(cls, crypto, tx):
-        invoice_address = InvoiceAddress.query.filter_by(addr=tx["addr"]).first()
+        invoice_address = InvoiceAddress.query.filter_by(
+            crypto=crypto.crypto, addr=tx["addr"]
+        ).first()
 
         if not invoice_address:
             # Check address in Invoice table in case the instance was upgraded from older version that does not have InvoiceAddress table
             invoice = Invoice.query.filter(
-                Invoice.addr == tx["addr"], Invoice.status != InvoiceStatus.OUTGOING
+                Invoice.addr == tx["addr"],
+                Invoice.crypto == crypto.crypto,
+                Invoice.status != InvoiceStatus.OUTGOING,
             ).first()
         else:
             invoice = Invoice.query.filter_by(id=invoice_address.invoice_id).first()
@@ -735,7 +739,7 @@ class AmlCheck(db.Model):
     )
     deposit_id = db.Column(db.String(120), nullable=False, unique=True, index=True)
     idempotency_key = db.Column(db.String(255), nullable=False, unique=True, index=True)
-    provider = db.Column(db.String(30), default="amlbot")
+    provider = db.Column(db.String(30), default="koinkyt")
     provider_status = db.Column(db.String(30))
     status = db.Column(db.String(30), nullable=False, default=AmlStatus.PENDING)
     deposit_decision = db.Column(db.String(30))

@@ -1,0 +1,3810 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "External API",
+        "description": "An API with an authorize Button",
+        "version": "0"
+    },
+    "servers": [
+        {
+            "url": "https://explorer.coinkyt.com/openapi/",
+            "description": "server"
+        }
+    ],
+    "paths": {
+        "/v1/balance": {
+            "get": {
+                "tags": [
+                    "User"
+                ],
+                "summary": "Get Balance",
+                "operationId": "get_balance_v1_balance_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/BalanceOut"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "Api Key Auth": []
+                    }
+                ]
+            }
+        },
+        "/v1/address": {
+            "get": {
+                "tags": [
+                    "Check"
+                ],
+                "summary": "Get Address",
+                "operationId": "get_address_v1_address_get",
+                "security": [
+                    {
+                        "Api Key Auth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "token",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "$ref": "#/components/schemas/Token",
+                            "default": ""
+                        }
+                    },
+                    {
+                        "name": "directs",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean",
+                            "default": false,
+                            "title": "Directs"
+                        }
+                    },
+                    {
+                        "name": "risk_profile_ids",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "integer"
+                                    }
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Risk Profile Ids"
+                        }
+                    },
+                    {
+                        "name": "direct_entities",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean",
+                            "default": false,
+                            "title": "Direct Entities"
+                        }
+                    },
+                    {
+                        "name": "indirect_entities",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean",
+                            "default": false,
+                            "title": "Indirect Entities"
+                        }
+                    },
+                    {
+                        "name": "discrete",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean",
+                            "default": false,
+                            "title": "Discrete"
+                        }
+                    },
+                    {
+                        "name": "blockchain",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/components/schemas/Blockchain"
+                        }
+                    },
+                    {
+                        "name": "address",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Address"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AddressInfoOutApi"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/transaction": {
+            "get": {
+                "tags": [
+                    "Check"
+                ],
+                "summary": "Get Transaction",
+                "operationId": "get_transaction_v1_transaction_get",
+                "security": [
+                    {
+                        "Api Key Auth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "token",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "$ref": "#/components/schemas/Token",
+                            "default": ""
+                        }
+                    },
+                    {
+                        "name": "risk_profile_ids",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "integer"
+                                    }
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Risk Profile Ids"
+                        }
+                    },
+                    {
+                        "name": "blockchain",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/components/schemas/Blockchain"
+                        }
+                    },
+                    {
+                        "name": "transaction",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Transaction"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/TransactionOutApi"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/transfer": {
+            "get": {
+                "tags": [
+                    "Check"
+                ],
+                "summary": "Check Transfer",
+                "operationId": "check_transfer_v1_transfer_get",
+                "security": [
+                    {
+                        "Api Key Auth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "output_address",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "description": "Recipient address in the transaction",
+                            "title": "Output Address"
+                        },
+                        "description": "Recipient address in the transaction"
+                    },
+                    {
+                        "name": "token",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "$ref": "#/components/schemas/Token",
+                            "default": ""
+                        }
+                    },
+                    {
+                        "name": "input_address",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "description": "Sender address in the transaction (optional for BTC)",
+                            "title": "Input Address"
+                        },
+                        "description": "Sender address in the transaction (optional for BTC)"
+                    },
+                    {
+                        "name": "risk_profile_ids",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "integer"
+                                    }
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Risk Profile Ids"
+                        }
+                    },
+                    {
+                        "name": "blockchain",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/components/schemas/Blockchain"
+                        }
+                    },
+                    {
+                        "name": "transaction",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Transaction"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Transfer"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/direct": {
+            "get": {
+                "tags": [
+                    "Tables"
+                ],
+                "summary": "Get Direct",
+                "operationId": "get_direct_v1_direct_get",
+                "security": [
+                    {
+                        "Api Key Auth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "token",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "$ref": "#/components/schemas/Token",
+                            "default": ""
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "maximum": 1000,
+                            "default": 100,
+                            "title": "Limit"
+                        }
+                    },
+                    {
+                        "name": "next_page_token",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Next Page Token"
+                        }
+                    },
+                    {
+                        "name": "blockchain",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/components/schemas/Blockchain"
+                        }
+                    },
+                    {
+                        "name": "address",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Address"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DirectEntitiesOutApi"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/indirect": {
+            "get": {
+                "tags": [
+                    "Tables"
+                ],
+                "summary": "Get Indirect",
+                "operationId": "get_indirect_v1_indirect_get",
+                "security": [
+                    {
+                        "Api Key Auth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "token",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "$ref": "#/components/schemas/Token",
+                            "default": ""
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "maximum": 1000,
+                            "default": 100,
+                            "title": "Limit"
+                        }
+                    },
+                    {
+                        "name": "next_page_token",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Next Page Token"
+                        }
+                    },
+                    {
+                        "name": "blockchain",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/components/schemas/Blockchain"
+                        }
+                    },
+                    {
+                        "name": "address",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Address"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/IndirectEntitiesOutApi"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/entity/types": {
+            "get": {
+                "tags": [
+                    "Entity"
+                ],
+                "summary": "Get Entities",
+                "description": "\u041f\u043e\u043b\u0443\u0447\u0438\u0442\u044c \u0441\u043f\u0438\u0441\u043e\u043a \u0442\u0438\u043f\u043e\u0432 \u0441\u0443\u0449\u043d\u043e\u0441\u0442\u0435\u0439.",
+                "operationId": "get_entities_v1_entity_types_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ListEntityTypesOut"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "Api Key Auth": []
+                    }
+                ]
+            }
+        },
+        "/v1/monitoring": {
+            "get": {
+                "tags": [
+                    "Monitoring"
+                ],
+                "summary": "Get List Monitoring",
+                "operationId": "get_list_monitoring_v1_monitoring_get",
+                "security": [
+                    {
+                        "Api Key Auth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Id"
+                        }
+                    },
+                    {
+                        "name": "address",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Address"
+                        }
+                    },
+                    {
+                        "name": "datetime_from",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Datetime From"
+                        }
+                    },
+                    {
+                        "name": "datetime_to",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Datetime To"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "maximum": 1000,
+                            "minimum": 0,
+                            "default": 100,
+                            "title": "Limit"
+                        }
+                    },
+                    {
+                        "name": "next_page_token",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "",
+                            "title": "Next Page Token"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PaginateMonitoringExternal"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/alerts": {
+            "get": {
+                "tags": [
+                    "Monitoring"
+                ],
+                "summary": "Get List Alerts",
+                "operationId": "get_list_alerts_v1_alerts_get",
+                "security": [
+                    {
+                        "Api Key Auth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "alert_id",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Alert Id"
+                        }
+                    },
+                    {
+                        "name": "id",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Id"
+                        }
+                    },
+                    {
+                        "name": "datetime_from",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Datetime From"
+                        }
+                    },
+                    {
+                        "name": "datetime_to",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Datetime To"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "maximum": 1000,
+                            "minimum": 0,
+                            "default": 100,
+                            "title": "Limit"
+                        }
+                    },
+                    {
+                        "name": "next_page_token",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "",
+                            "title": "Next Page Token"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PaginateAlertsExternal"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/monitoring/address": {
+            "post": {
+                "tags": [
+                    "Monitoring"
+                ],
+                "summary": "Add Address To Monitoring",
+                "operationId": "add_address_to_monitoring_v1_monitoring_address_post",
+                "security": [
+                    {
+                        "Api Key Auth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "address_changes",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean",
+                            "default": false,
+                            "title": "Address Changes"
+                        }
+                    },
+                    {
+                        "name": "blockchain",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/components/schemas/Blockchain"
+                        }
+                    },
+                    {
+                        "name": "address",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Address"
+                        }
+                    },
+                    {
+                        "name": "risk_profile_id",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "title": "Risk Profile Id"
+                        }
+                    },
+                    {
+                        "name": "tokens",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Token"
+                                    }
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Tokens"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AddMonitoringResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Monitoring"
+                ],
+                "summary": "Remove Address From Monitoring",
+                "operationId": "remove_address_from_monitoring_v1_monitoring_address_delete",
+                "security": [
+                    {
+                        "Api Key Auth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "blockchain",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/components/schemas/Blockchain"
+                        }
+                    },
+                    {
+                        "name": "address",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Address"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/monitoring/list": {
+            "get": {
+                "tags": [
+                    "Monitoring"
+                ],
+                "summary": "Get Monitored Addresses List",
+                "operationId": "get_monitored_addresses_list_v1_monitoring_list_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "items": {
+                                        "$ref": "#/components/schemas/MonitoringAddressOut"
+                                    },
+                                    "type": "array",
+                                    "title": "Response Get Monitored Addresses List V1 Monitoring List Get"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "Api Key Auth": []
+                    }
+                ]
+            }
+        },
+        "/v1/report-download/{report_uuid}": {
+            "get": {
+                "tags": [
+                    "PDF-Export"
+                ],
+                "summary": "Get Report",
+                "operationId": "get_report_v1_report_download__report_uuid__get",
+                "security": [
+                    {
+                        "Api Key Auth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "report_uuid",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid",
+                            "title": "Report Uuid"
+                        }
+                    },
+                    {
+                        "name": "language",
+                        "in": "query",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/components/schemas/LanguageTypeEnum"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/check-history": {
+            "get": {
+                "tags": [
+                    "History"
+                ],
+                "summary": "Get User Check History List",
+                "operationId": "get_user_check_history_list_v1_check_history_get",
+                "security": [
+                    {
+                        "Api Key Auth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "datetime_from",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Datetime From"
+                        }
+                    },
+                    {
+                        "name": "datetime_to",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Datetime To"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "maximum": 1000,
+                            "default": 100,
+                            "title": "Limit"
+                        }
+                    },
+                    {
+                        "name": "next_page_token",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Next Page Token"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HistoryCheckOutApi"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/check-history/{id}": {
+            "get": {
+                "tags": [
+                    "History"
+                ],
+                "summary": "Get User Check Data",
+                "operationId": "get_user_check_data_v1_check_history__id__get",
+                "security": [
+                    {
+                        "Api Key Auth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "integer"
+                                },
+                                {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                {
+                                    "type": "string"
+                                }
+                            ],
+                            "description": "Check id or uuid",
+                            "title": "Id"
+                        },
+                        "description": "Check id or uuid"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "anyOf": [
+                                        {
+                                            "$ref": "#/components/schemas/TransactionOutApi"
+                                        },
+                                        {
+                                            "$ref": "#/components/schemas/AddressInfoOutApi"
+                                        },
+                                        {
+                                            "$ref": "#/components/schemas/Transfer"
+                                        }
+                                    ],
+                                    "title": "Response Get User Check Data V1 Check History  Id  Get"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/changes": {
+            "get": {
+                "tags": [
+                    "Address changes"
+                ],
+                "summary": "Get Monitored Address Changes",
+                "operationId": "get_monitored_address_changes_v1_changes_get",
+                "security": [
+                    {
+                        "Api Key Auth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "address",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Address"
+                        }
+                    },
+                    {
+                        "name": "alert_id",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "format": "uuid"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Alert Id"
+                        }
+                    },
+                    {
+                        "name": "datetime_from",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Datetime From"
+                        }
+                    },
+                    {
+                        "name": "datetime_to",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string",
+                                    "format": "date-time"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Datetime To"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "maximum": 1000,
+                            "minimum": 0,
+                            "default": 100,
+                            "title": "Limit"
+                        }
+                    },
+                    {
+                        "name": "next_page_token",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "Next Page Token"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AddressChangesOut"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/risk-profile": {
+            "post": {
+                "tags": [
+                    "Risk profile"
+                ],
+                "summary": "Create Risk Profile",
+                "operationId": "create_risk_profile_v1_risk_profile_post",
+                "security": [
+                    {
+                        "Api Key Auth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/RiskProfileName"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RiskProfileOut"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "get": {
+                "tags": [
+                    "Risk profile"
+                ],
+                "summary": "Get Risk Profiles",
+                "operationId": "get_risk_profiles_v1_risk_profile_get",
+                "security": [
+                    {
+                        "Api Key Auth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 3,
+                            "title": "Limit"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PaginateRiskProfile"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/v1/risk-profile/{risk_profile_id}": {
+            "get": {
+                "tags": [
+                    "Risk profile"
+                ],
+                "summary": "Get Risk Profile",
+                "operationId": "get_risk_profile_v1_risk_profile__risk_profile_id__get",
+                "security": [
+                    {
+                        "Api Key Auth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "risk_profile_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "title": "Risk Profile Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RiskProfileOut"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "tags": [
+                    "Risk profile"
+                ],
+                "summary": "Update Risk Profile",
+                "operationId": "update_risk_profile_v1_risk_profile__risk_profile_id__put",
+                "security": [
+                    {
+                        "Api Key Auth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "risk_profile_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "title": "Risk Profile Id"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/RiskProfileIn"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RiskProfileOut"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Risk profile"
+                ],
+                "summary": "Delete Risk Profile",
+                "operationId": "delete_risk_profile_v1_risk_profile__risk_profile_id__delete",
+                "security": [
+                    {
+                        "Api Key Auth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "risk_profile_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "title": "Risk Profile Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RiskProfileOut"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "AddMonitoringResponse": {
+                "properties": {
+                    "details": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Details"
+                    },
+                    "data": {
+                        "$ref": "#/components/schemas/MonitoringAddressOut"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "data"
+                ],
+                "title": "AddMonitoringResponse"
+            },
+            "AddressChangeExternal": {
+                "properties": {
+                    "type_label": {
+                        "type": "string",
+                        "title": "Type Label"
+                    },
+                    "type": {
+                        "type": "string",
+                        "title": "Type"
+                    },
+                    "total_count_before": {
+                        "type": "number",
+                        "title": "Total Count Before"
+                    },
+                    "total_count_after": {
+                        "type": "number",
+                        "title": "Total Count After"
+                    },
+                    "total_count_changes": {
+                        "type": "number",
+                        "title": "Total Count Changes"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "type_label",
+                    "type",
+                    "total_count_before",
+                    "total_count_after",
+                    "total_count_changes"
+                ],
+                "title": "AddressChangeExternal"
+            },
+            "AddressChanges": {
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "title": "Id"
+                    },
+                    "changes_profile": {
+                        "type": "string",
+                        "title": "Changes Profile"
+                    },
+                    "triggered_by": {
+                        "items": {},
+                        "type": "array",
+                        "title": "Triggered By"
+                    },
+                    "date": {
+                        "type": "string",
+                        "format": "date-time",
+                        "title": "Date"
+                    },
+                    "blockchain": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/Blockchain"
+                            },
+                            {
+                                "type": "string"
+                            }
+                        ],
+                        "title": "Blockchain"
+                    },
+                    "token": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/Token"
+                            },
+                            {
+                                "type": "string"
+                            }
+                        ],
+                        "title": "Token"
+                    },
+                    "tracked_address": {
+                        "type": "string",
+                        "title": "Tracked Address"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "changes_profile",
+                    "triggered_by",
+                    "date",
+                    "blockchain",
+                    "token",
+                    "tracked_address"
+                ],
+                "title": "AddressChanges"
+            },
+            "AddressChangesOut": {
+                "properties": {
+                    "items": {
+                        "items": {
+                            "$ref": "#/components/schemas/AddressChanges"
+                        },
+                        "type": "array",
+                        "title": "Items"
+                    },
+                    "next_page_token": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Next Page Token"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "items"
+                ],
+                "title": "AddressChangesOut"
+            },
+            "AddressInfoOutApi": {
+                "properties": {
+                    "name": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Name"
+                    },
+                    "type_label": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Type Label"
+                    },
+                    "type": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Type"
+                    },
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "title": "Id"
+                    },
+                    "blockchain": {
+                        "type": "string",
+                        "title": "Blockchain"
+                    },
+                    "token": {
+                        "type": "string",
+                        "title": "Token",
+                        "default": ""
+                    },
+                    "address": {
+                        "type": "string",
+                        "title": "Address"
+                    },
+                    "risk_score": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                                "examples": [
+                                    "123.1"
+                                ]
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Risk Score"
+                    },
+                    "risk_score_grade": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Risk Score Grade"
+                    },
+                    "directs": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "$ref": "#/components/schemas/DirectOut"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Directs"
+                    },
+                    "indirects": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "$ref": "#/components/schemas/IndirectOut"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Indirects"
+                    },
+                    "direct_entities": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "$ref": "#/components/schemas/DirectEntityOut"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Direct Entities"
+                    },
+                    "indirect_entities": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "$ref": "#/components/schemas/IndirectEntityOut"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Indirect Entities"
+                    },
+                    "discrete": {
+                        "$ref": "#/components/schemas/DiscreteIndirectsOut"
+                    },
+                    "link": {
+                        "type": "string",
+                        "title": "Link"
+                    },
+                    "contract_name": {
+                        "type": "string",
+                        "title": "Contract Name",
+                        "default": ""
+                    },
+                    "contract_symbol": {
+                        "type": "string",
+                        "title": "Contract Symbol",
+                        "default": ""
+                    },
+                    "is_contract_address": {
+                        "type": "boolean",
+                        "title": "Is Contract Address",
+                        "default": false
+                    },
+                    "alerts": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "$ref": "#/components/schemas/AlertsOutExternal"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Alerts"
+                    },
+                    "incoming_amount": {
+                        "type": "string",
+                        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                        "title": "Incoming Amount",
+                        "default": "0",
+                        "examples": [
+                            "123.1"
+                        ]
+                    },
+                    "outgoing_amount": {
+                        "type": "string",
+                        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                        "title": "Outgoing Amount",
+                        "default": "0",
+                        "examples": [
+                            "123.1"
+                        ]
+                    },
+                    "balance": {
+                        "type": "string",
+                        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                        "title": "Balance",
+                        "default": "0",
+                        "examples": [
+                            "123.1"
+                        ]
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "blockchain",
+                    "address",
+                    "link"
+                ],
+                "title": "AddressInfoOutApi"
+            },
+            "AlertsOutExternal": {
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "title": "Id"
+                    },
+                    "risk_profile": {
+                        "type": "string",
+                        "title": "Risk Profile"
+                    },
+                    "triggered_by": {
+                        "items": {
+                            "$ref": "#/components/schemas/RiskProfileOutExternal"
+                        },
+                        "type": "array",
+                        "title": "Triggered By"
+                    },
+                    "date": {
+                        "type": "string",
+                        "format": "date-time",
+                        "title": "Date"
+                    },
+                    "blockchain": {
+                        "$ref": "#/components/schemas/Blockchain"
+                    },
+                    "token": {
+                        "$ref": "#/components/schemas/Token"
+                    },
+                    "balance": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                                "examples": [
+                                    "123.1"
+                                ]
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Balance"
+                    },
+                    "risk_grade": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Risk Grade"
+                    },
+                    "alert_id": {
+                        "type": "string",
+                        "title": "Alert Id"
+                    },
+                    "address": {
+                        "type": "string",
+                        "title": "Address"
+                    },
+                    "status": {
+                        "type": "boolean",
+                        "title": "Status",
+                        "default": false
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "risk_profile",
+                    "triggered_by",
+                    "date",
+                    "blockchain",
+                    "token",
+                    "alert_id",
+                    "address"
+                ],
+                "title": "AlertsOutExternal"
+            },
+            "BalanceOut": {
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "title": "Id"
+                    },
+                    "current_balance": {
+                        "type": "integer",
+                        "title": "Current Balance"
+                    },
+                    "balance": {
+                        "type": "integer",
+                        "title": "Balance"
+                    },
+                    "balance_used": {
+                        "type": "integer",
+                        "title": "Balance Used"
+                    },
+                    "expired_at": {
+                        "type": "string",
+                        "format": "date",
+                        "title": "Expired At"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "current_balance",
+                    "balance",
+                    "balance_used",
+                    "expired_at"
+                ],
+                "title": "BalanceOut"
+            },
+            "Blockchain": {
+                "type": "string",
+                "enum": [
+                    "btc",
+                    "eth",
+                    "trx"
+                ],
+                "title": "Blockchain"
+            },
+            "Currency": {
+                "type": "string",
+                "enum": [
+                    "rub",
+                    "usd"
+                ],
+                "title": "Currency"
+            },
+            "DirectEntitiesOutApi": {
+                "properties": {
+                    "items": {
+                        "items": {
+                            "$ref": "#/components/schemas/DirectEntityOut"
+                        },
+                        "type": "array",
+                        "title": "Items"
+                    },
+                    "next_page_token": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Next Page Token"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "items"
+                ],
+                "title": "DirectEntitiesOutApi"
+            },
+            "DirectEntityOut": {
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "title": "Name"
+                    },
+                    "type": {
+                        "type": "string",
+                        "title": "Type"
+                    },
+                    "type_label": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Type Label"
+                    },
+                    "incoming_amount": {
+                        "type": "string",
+                        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                        "title": "Incoming Amount",
+                        "examples": [
+                            "123.1"
+                        ]
+                    },
+                    "outgoing_amount": {
+                        "type": "string",
+                        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                        "title": "Outgoing Amount",
+                        "examples": [
+                            "123.1"
+                        ]
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "name",
+                    "type",
+                    "incoming_amount",
+                    "outgoing_amount"
+                ],
+                "title": "DirectEntityOut"
+            },
+            "DirectOut": {
+                "properties": {
+                    "type_label": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Type Label"
+                    },
+                    "risk_score_grade": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Risk Score Grade"
+                    },
+                    "type": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Type"
+                    },
+                    "total_count": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                                "examples": [
+                                    "123.1"
+                                ]
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Total Count"
+                    },
+                    "total_count_coef": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                                "examples": [
+                                    "123.1"
+                                ]
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Total Count Coef"
+                    },
+                    "total": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                                "examples": [
+                                    "123.1"
+                                ]
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Total"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "type_label",
+                    "risk_score_grade",
+                    "total_count",
+                    "total"
+                ],
+                "title": "DirectOut"
+            },
+            "DiscreteIndirectsOut": {
+                "properties": {
+                    "received": {
+                        "items": {
+                            "$ref": "#/components/schemas/IndirectReceivedOut"
+                        },
+                        "type": "array",
+                        "title": "Received"
+                    },
+                    "sent": {
+                        "items": {
+                            "$ref": "#/components/schemas/IndirectSentOut"
+                        },
+                        "type": "array",
+                        "title": "Sent"
+                    }
+                },
+                "type": "object",
+                "title": "DiscreteIndirectsOut"
+            },
+            "EntityOut": {
+                "properties": {
+                    "name": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Name"
+                    },
+                    "type_label": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Type Label"
+                    },
+                    "type": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Type"
+                    }
+                },
+                "type": "object",
+                "title": "EntityOut",
+                "description": "\u0412\u044b\u0432\u043e\u0434 \u0441\u0443\u0449\u043d\u043e\u0441\u0442\u0438 \u0442\u0438\u043f\u0430 \u0441\u0443\u0449\u043d\u043e\u0441\u0442\u0438"
+            },
+            "EntityTypeOut": {
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "title": "Id"
+                    },
+                    "type_label": {
+                        "type": "string",
+                        "title": "Type Label"
+                    },
+                    "type": {
+                        "type": "string",
+                        "title": "Type"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "type_label",
+                    "type"
+                ],
+                "title": "EntityTypeOut",
+                "description": "\u0422\u0438\u043f \u0441\u0443\u0449\u043d\u043e\u0441\u0442\u0438"
+            },
+            "HTTPValidationError": {
+                "properties": {
+                    "detail": {
+                        "items": {
+                            "$ref": "#/components/schemas/ValidationError"
+                        },
+                        "type": "array",
+                        "title": "Detail"
+                    }
+                },
+                "type": "object",
+                "title": "HTTPValidationError"
+            },
+            "HistoryCheck": {
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "title": "Id"
+                    },
+                    "uuid": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Uuid"
+                    },
+                    "check_type": {
+                        "type": "string",
+                        "title": "Check Type"
+                    },
+                    "address": {
+                        "type": "string",
+                        "title": "Address"
+                    },
+                    "blockchain": {
+                        "type": "string",
+                        "title": "Blockchain"
+                    },
+                    "token": {
+                        "type": "string",
+                        "title": "Token"
+                    },
+                    "updates": {
+                        "type": "boolean",
+                        "title": "Updates"
+                    },
+                    "date": {
+                        "type": "string",
+                        "format": "date-time",
+                        "title": "Date"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "check_type",
+                    "address",
+                    "blockchain",
+                    "token",
+                    "updates",
+                    "date"
+                ],
+                "title": "HistoryCheck"
+            },
+            "HistoryCheckOutApi": {
+                "properties": {
+                    "items": {
+                        "items": {
+                            "$ref": "#/components/schemas/HistoryCheck"
+                        },
+                        "type": "array",
+                        "title": "Items"
+                    },
+                    "next_page_token": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Next Page Token"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "items"
+                ],
+                "title": "HistoryCheckOutApi"
+            },
+            "IndirectEntitiesOutApi": {
+                "properties": {
+                    "items": {
+                        "items": {
+                            "$ref": "#/components/schemas/IndirectEntityOut"
+                        },
+                        "type": "array",
+                        "title": "Items"
+                    },
+                    "next_page_token": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Next Page Token"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "items"
+                ],
+                "title": "IndirectEntitiesOutApi"
+            },
+            "IndirectEntityOut": {
+                "properties": {
+                    "name": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Name"
+                    },
+                    "type": {
+                        "type": "string",
+                        "title": "Type"
+                    },
+                    "type_label": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Type Label"
+                    },
+                    "incoming_amount": {
+                        "type": "string",
+                        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                        "title": "Incoming Amount",
+                        "examples": [
+                            "123.1"
+                        ]
+                    },
+                    "outgoing_amount": {
+                        "type": "string",
+                        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                        "title": "Outgoing Amount",
+                        "examples": [
+                            "123.1"
+                        ]
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "type",
+                    "incoming_amount",
+                    "outgoing_amount"
+                ],
+                "title": "IndirectEntityOut"
+            },
+            "IndirectOut": {
+                "properties": {
+                    "type_label": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Type Label"
+                    },
+                    "risk_score_grade": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Risk Score Grade"
+                    },
+                    "type": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Type"
+                    },
+                    "total_count": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                                "examples": [
+                                    "123.1"
+                                ]
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Total Count"
+                    },
+                    "total_count_coef": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                                "examples": [
+                                    "123.1"
+                                ]
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Total Count Coef"
+                    },
+                    "total": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                                "examples": [
+                                    "123.1"
+                                ]
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Total"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "type_label",
+                    "risk_score_grade",
+                    "total_count",
+                    "total"
+                ],
+                "title": "IndirectOut",
+                "description": "Indirect output for external API."
+            },
+            "IndirectReceivedOut": {
+                "properties": {
+                    "type_label": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Type Label"
+                    },
+                    "risk_score_grade": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Risk Score Grade"
+                    },
+                    "type": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Type"
+                    },
+                    "received_count_coef": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                                "examples": [
+                                    "123.1"
+                                ]
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Received Count Coef"
+                    },
+                    "received": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                                "examples": [
+                                    "123.1"
+                                ]
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Received"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "type_label",
+                    "risk_score_grade",
+                    "received"
+                ],
+                "title": "IndirectReceivedOut",
+                "description": "IndirectReceived output for external API."
+            },
+            "IndirectSentOut": {
+                "properties": {
+                    "type_label": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Type Label"
+                    },
+                    "risk_score_grade": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Risk Score Grade"
+                    },
+                    "type": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Type"
+                    },
+                    "sent_count_coef": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                                "examples": [
+                                    "123.1"
+                                ]
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Sent Count Coef"
+                    },
+                    "sent": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                                "examples": [
+                                    "123.1"
+                                ]
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Sent"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "type_label",
+                    "risk_score_grade",
+                    "sent"
+                ],
+                "title": "IndirectSentOut",
+                "description": "IndirectSent output for external API."
+            },
+            "LanguageTypeEnum": {
+                "type": "string",
+                "enum": [
+                    "ru",
+                    "en"
+                ],
+                "title": "LanguageTypeEnum"
+            },
+            "ListEntityTypesOut": {
+                "properties": {
+                    "types": {
+                        "items": {
+                            "$ref": "#/components/schemas/EntityTypeOut"
+                        },
+                        "type": "array",
+                        "title": "Types"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "types"
+                ],
+                "title": "ListEntityTypesOut",
+                "description": "\u0421\u043f\u0438\u0441\u043e\u043a \u0442\u0438\u043f\u043e\u0432 \u0441\u0443\u0449\u043d\u043e\u0441\u0442\u0435\u0439"
+            },
+            "MonitoringAddressOut": {
+                "properties": {
+                    "blockchain": {
+                        "type": "string",
+                        "title": "Blockchain"
+                    },
+                    "address": {
+                        "type": "string",
+                        "title": "Address"
+                    },
+                    "tokens": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Tokens"
+                    },
+                    "risk_profile": {
+                        "type": "string",
+                        "title": "Risk Profile"
+                    },
+                    "risk_profile_id": {
+                        "type": "integer",
+                        "title": "Risk Profile Id"
+                    },
+                    "address_changes": {
+                        "type": "boolean",
+                        "title": "Address Changes"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "blockchain",
+                    "address",
+                    "tokens",
+                    "risk_profile",
+                    "risk_profile_id",
+                    "address_changes"
+                ],
+                "title": "MonitoringAddressOut"
+            },
+            "MonitoringOutExternal": {
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "title": "Id"
+                    },
+                    "risk_profile": {
+                        "type": "string",
+                        "title": "Risk Profile"
+                    },
+                    "triggered_by": {
+                        "items": {
+                            "$ref": "#/components/schemas/RiskProfileOutExternal"
+                        },
+                        "type": "array",
+                        "title": "Triggered By"
+                    },
+                    "date": {
+                        "type": "string",
+                        "format": "date-time",
+                        "title": "Date"
+                    },
+                    "blockchain": {
+                        "$ref": "#/components/schemas/Blockchain"
+                    },
+                    "token": {
+                        "$ref": "#/components/schemas/Token"
+                    },
+                    "balance": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                                "examples": [
+                                    "123.1"
+                                ]
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Balance"
+                    },
+                    "risk_grade": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Risk Grade"
+                    },
+                    "tracked_address": {
+                        "type": "string",
+                        "title": "Tracked Address"
+                    },
+                    "sender": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Sender"
+                    },
+                    "txid": {
+                        "type": "string",
+                        "title": "Txid"
+                    },
+                    "address_changes": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "$ref": "#/components/schemas/AddressChangeExternal"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Address Changes"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "risk_profile",
+                    "triggered_by",
+                    "date",
+                    "blockchain",
+                    "token",
+                    "tracked_address",
+                    "txid"
+                ],
+                "title": "MonitoringOutExternal"
+            },
+            "PaginateAlertsExternal": {
+                "properties": {
+                    "items": {
+                        "items": {
+                            "$ref": "#/components/schemas/AlertsOutExternal"
+                        },
+                        "type": "array",
+                        "title": "Items"
+                    },
+                    "next_page_token": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Next Page Token"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "items"
+                ],
+                "title": "PaginateAlertsExternal"
+            },
+            "PaginateMonitoringExternal": {
+                "properties": {
+                    "items": {
+                        "items": {
+                            "$ref": "#/components/schemas/MonitoringOutExternal"
+                        },
+                        "type": "array",
+                        "title": "Items"
+                    },
+                    "next_page_token": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Next Page Token"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "items"
+                ],
+                "title": "PaginateMonitoringExternal"
+            },
+            "PaginateRiskProfile": {
+                "properties": {
+                    "items": {
+                        "items": {
+                            "$ref": "#/components/schemas/RiskProfileOut"
+                        },
+                        "type": "array",
+                        "title": "Items"
+                    },
+                    "count": {
+                        "type": "integer",
+                        "title": "Count"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "items",
+                    "count"
+                ],
+                "title": "PaginateRiskProfile"
+            },
+            "Profile": {
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "title": "Type"
+                    },
+                    "currency": {
+                        "$ref": "#/components/schemas/Currency",
+                        "default": "usd"
+                    },
+                    "amount": {
+                        "type": "number",
+                        "title": "Amount",
+                        "default": 0
+                    },
+                    "assets": {
+                        "type": "number",
+                        "maximum": 1.0,
+                        "minimum": 0.0,
+                        "title": "Assets"
+                    },
+                    "is_active_for_monitoring": {
+                        "type": "boolean",
+                        "title": "Is Active For Monitoring",
+                        "default": false
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "type",
+                    "assets"
+                ],
+                "title": "Profile"
+            },
+            "RiskProfileIn": {
+                "properties": {
+                    "name": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "maxLength": 30
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Name",
+                        "examples": [
+                            "My risk profile"
+                        ]
+                    },
+                    "profile": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "$ref": "#/components/schemas/Profile"
+                                },
+                                "type": "array",
+                                "maxItems": 33,
+                                "minItems": 33
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Profile",
+                        "examples": [
+                            [
+                                {
+                                    "amount": 100,
+                                    "assets": 0.01,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "DARKNET_MARKETPLACE"
+                                },
+                                {
+                                    "amount": 100,
+                                    "assets": 0.01,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "DARKNET_SERVICE"
+                                },
+                                {
+                                    "amount": 100,
+                                    "assets": 0.01,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "ILLEGAL_SERVICE"
+                                },
+                                {
+                                    "amount": 100,
+                                    "assets": 0.01,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "SCAM"
+                                },
+                                {
+                                    "amount": 100,
+                                    "assets": 0.01,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "SCAM_CRYPTO_EXCHANGE"
+                                },
+                                {
+                                    "amount": 0,
+                                    "assets": 0.05,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "GAMBLING"
+                                },
+                                {
+                                    "amount": 100,
+                                    "assets": 0.01,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "STOLEN_ASSETS"
+                                },
+                                {
+                                    "amount": 100,
+                                    "assets": 0.01,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "MIXING_SERVICE"
+                                },
+                                {
+                                    "amount": 100,
+                                    "assets": 0.01,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "MALWARE"
+                                },
+                                {
+                                    "amount": 100,
+                                    "assets": 0.01,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "SANCTIONS"
+                                },
+                                {
+                                    "amount": 100,
+                                    "assets": 0.01,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "TERRORISM_FINANCING"
+                                },
+                                {
+                                    "amount": 100,
+                                    "assets": 0.01,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "ILLEGAL_ARMS_TRAFFICKING"
+                                },
+                                {
+                                    "amount": 100,
+                                    "assets": 0.01,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "DRUGS_TRAFFICKING"
+                                },
+                                {
+                                    "amount": 100,
+                                    "assets": 0.01,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "RANSOM"
+                                },
+                                {
+                                    "amount": 100,
+                                    "assets": 0.01,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "CHILD_ABUSE_MATERIAL"
+                                },
+                                {
+                                    "amount": 100,
+                                    "assets": 0.01,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "PRIVACY_PROTOCOL"
+                                },
+                                {
+                                    "amount": 100,
+                                    "assets": 0.01,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "SANCTIONED_JURISDICTION"
+                                },
+                                {
+                                    "amount": 100,
+                                    "assets": 0.01,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "SEIZED_ASSETS"
+                                },
+                                {
+                                    "amount": 100,
+                                    "assets": 0.01,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "EXTREMISM"
+                                },
+                                {
+                                    "amount": 0,
+                                    "assets": 0.2,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "ATM"
+                                },
+                                {
+                                    "amount": 0,
+                                    "assets": 0.5,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "EXCHANGE_UNLICENSED"
+                                },
+                                {
+                                    "amount": 0,
+                                    "assets": 0.5,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "P2P_EXCHANGE_UNLICENSED"
+                                },
+                                {
+                                    "amount": 0,
+                                    "assets": 0.5,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "DECENTRALIZED_EXCHANGE"
+                                },
+                                {
+                                    "amount": 0,
+                                    "assets": 0.5,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "BRIDGES"
+                                },
+                                {
+                                    "amount": 0,
+                                    "assets": 0.5,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "LENDING_PROTOCOL"
+                                },
+                                {
+                                    "amount": 0,
+                                    "assets": 0.9,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "MINER"
+                                },
+                                {
+                                    "amount": 0,
+                                    "assets": 0.9,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "ONLINE_MARKETPLACE"
+                                },
+                                {
+                                    "amount": 0,
+                                    "assets": 0.9,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "ONLINE_WALLET"
+                                },
+                                {
+                                    "amount": 0,
+                                    "assets": 0.9,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "EXCHANGE_LICENSED"
+                                },
+                                {
+                                    "amount": 0,
+                                    "assets": 0.9,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "P2P_EXCHANGE_LICENSED"
+                                },
+                                {
+                                    "amount": 0,
+                                    "assets": 0.9,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "PAYMENT_SYSTEM"
+                                },
+                                {
+                                    "amount": 0,
+                                    "assets": 0.9,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "SEIZURE_OF_FUNDS"
+                                },
+                                {
+                                    "amount": 0,
+                                    "assets": 0.1,
+                                    "currency": "usd",
+                                    "is_active_for_monitoring": true,
+                                    "type": "OTHER"
+                                }
+                            ]
+                        ]
+                    }
+                },
+                "type": "object",
+                "title": "RiskProfileIn"
+            },
+            "RiskProfileName": {
+                "properties": {
+                    "name": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "maxLength": 30
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Name",
+                        "examples": [
+                            "My risk profile"
+                        ]
+                    }
+                },
+                "type": "object",
+                "title": "RiskProfileName"
+            },
+            "RiskProfileOut": {
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "title": "Id"
+                    },
+                    "name": {
+                        "type": "string",
+                        "title": "Name"
+                    },
+                    "profile": {
+                        "items": {
+                            "$ref": "#/components/schemas/Profile"
+                        },
+                        "type": "array",
+                        "title": "Profile"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "title": "Created At"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "title": "Updated At"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "name",
+                    "profile",
+                    "created_at",
+                    "updated_at"
+                ],
+                "title": "RiskProfileOut"
+            },
+            "RiskProfileOutExternal": {
+                "properties": {
+                    "type_label": {
+                        "type": "string",
+                        "title": "Type Label"
+                    },
+                    "type": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Type"
+                    },
+                    "total_count": {
+                        "type": "string",
+                        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                        "title": "Total Count",
+                        "examples": [
+                            "123.1"
+                        ]
+                    },
+                    "total_count_coef": {
+                        "type": "string",
+                        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                        "title": "Total Count Coef",
+                        "examples": [
+                            "123.1"
+                        ]
+                    },
+                    "total": {
+                        "type": "string",
+                        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                        "title": "Total",
+                        "examples": [
+                            "123.1"
+                        ]
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "type_label",
+                    "total_count",
+                    "total_count_coef",
+                    "total"
+                ],
+                "title": "RiskProfileOutExternal"
+            },
+            "Token": {
+                "type": "string",
+                "enum": [
+                    "",
+                    "USDT",
+                    "USDC"
+                ],
+                "title": "Token"
+            },
+            "TransactionOutApi": {
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "title": "Id"
+                    },
+                    "blockchain": {
+                        "type": "string",
+                        "title": "Blockchain"
+                    },
+                    "token": {
+                        "type": "string",
+                        "title": "Token",
+                        "default": ""
+                    },
+                    "address": {
+                        "type": "string",
+                        "title": "Address"
+                    },
+                    "risk_score": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                                "examples": [
+                                    "123.1"
+                                ]
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Risk Score"
+                    },
+                    "risk_score_grade": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Risk Score Grade"
+                    },
+                    "inputs": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Inputs"
+                    },
+                    "outputs": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Outputs"
+                    },
+                    "from_entity": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "$ref": "#/components/schemas/EntityOut"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "From Entity"
+                    },
+                    "to_entity": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "$ref": "#/components/schemas/EntityOut"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "To Entity"
+                    },
+                    "indirects": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "$ref": "#/components/schemas/IndirectOut"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Indirects"
+                    },
+                    "block_number": {
+                        "type": "integer",
+                        "title": "Block Number"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time",
+                        "title": "Timestamp"
+                    },
+                    "link": {
+                        "type": "string",
+                        "title": "Link"
+                    },
+                    "too_many_indirects": {
+                        "type": "boolean",
+                        "title": "Too Many Indirects",
+                        "default": false
+                    },
+                    "alerts": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "$ref": "#/components/schemas/AlertsOutExternal"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Alerts"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "blockchain",
+                    "address",
+                    "block_number",
+                    "timestamp",
+                    "link"
+                ],
+                "title": "TransactionOutApi",
+                "description": "\u0412\u044b\u0432\u043e\u0434 \u0442\u0440\u0430\u043d\u0437\u0430\u043a\u0446\u0438\u0438 \u0432 api."
+            },
+            "Transfer": {
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "title": "Id"
+                    },
+                    "blockchain": {
+                        "type": "string",
+                        "title": "Blockchain"
+                    },
+                    "token": {
+                        "type": "string",
+                        "title": "Token",
+                        "default": ""
+                    },
+                    "address": {
+                        "type": "string",
+                        "title": "Address"
+                    },
+                    "from_entity": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "$ref": "#/components/schemas/EntityOut"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "From Entity"
+                    },
+                    "to_entity": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "$ref": "#/components/schemas/EntityOut"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "To Entity"
+                    },
+                    "indirects": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "$ref": "#/components/schemas/TransfersOut"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Indirects"
+                    },
+                    "block_number": {
+                        "anyOf": [
+                            {
+                                "type": "integer"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Block Number"
+                    },
+                    "timestamp": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "format": "date-time"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Timestamp"
+                    },
+                    "link": {
+                        "type": "string",
+                        "title": "Link"
+                    },
+                    "alerts": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "$ref": "#/components/schemas/AlertsOutExternal"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Alerts"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "blockchain",
+                    "address",
+                    "link"
+                ],
+                "title": "Transfer"
+            },
+            "TransfersOut": {
+                "properties": {
+                    "type_label": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Type Label"
+                    },
+                    "risk_score_grade": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Risk Score Grade"
+                    },
+                    "type": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Type"
+                    },
+                    "total_count": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                                "examples": [
+                                    "123.1"
+                                ]
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Total Count"
+                    },
+                    "total_count_coef": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                                "examples": [
+                                    "123.1"
+                                ]
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Total Count Coef"
+                    },
+                    "total": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                                "examples": [
+                                    "123.1"
+                                ]
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Total"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "type_label",
+                    "risk_score_grade",
+                    "total_count",
+                    "total"
+                ],
+                "title": "TransfersOut",
+                "description": "Indirect without URL support."
+            },
+            "ValidationError": {
+                "properties": {
+                    "loc": {
+                        "items": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "integer"
+                                }
+                            ]
+                        },
+                        "type": "array",
+                        "title": "Location"
+                    },
+                    "msg": {
+                        "type": "string",
+                        "title": "Message"
+                    },
+                    "type": {
+                        "type": "string",
+                        "title": "Error Type"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "loc",
+                    "msg",
+                    "type"
+                ],
+                "title": "ValidationError"
+            }
+        },
+        "securitySchemes": {
+            "Api Key Auth": {
+                "type": "apiKey",
+                "in": "header",
+                "name": "X-API-Key",
+                "description": "Enter: **'&lt;API_KEY&gt;'**"
+            }
+        }
+    }
+}
