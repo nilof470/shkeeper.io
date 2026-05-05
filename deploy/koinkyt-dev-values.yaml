@@ -1,0 +1,40 @@
+# Helm values overlay for the Koinkyt AML dev deployment.
+#
+# Use together with the existing VPS values file:
+#   helm upgrade -f /root/shkeeper-values.yaml -f /root/koinkyt-dev-values.yaml shkeeper vsys-host/shkeeper
+#
+# Do not put real API keys in this file. Inject KOINKYT_API_KEY through a
+# Kubernetes Secret after the Helm upgrade, as documented in
+# docs/KOINKYT_DEV_VPS_DEPLOY.md.
+
+dev:
+  imagePullSecrets:
+    - name: ghcr-nilof470
+
+shkeeper:
+  image: ghcr.io/nilof470/shkeeper.io:982c804
+  extraEnv:
+    AML_ENABLED: "true"
+    AML_PROVIDER: koinkyt
+    AML_SHKEEPER_HOST: http://aml-shkeeper:6000
+    AML_MAX_ACCEPT_SCORE: "0.10"
+    AML_MIN_CHECK_AMOUNT_FIAT: "100"
+    AML_SKIP_CUMULATIVE_LIMIT_FIAT: "300"
+    AML_SKIP_CUMULATIVE_WINDOW_HOURS: "24"
+    AML_PENDING_TIMEOUT_SECONDS: "1800"
+    AML_RETRY_DELAY_SECONDS: "120"
+
+aml:
+  enabled: true
+
+aml_shkeeper:
+  image: ghcr.io/nilof470/aml-shkeeper:f2a25dd
+  extraEnv:
+    CURRENT_PROVIDER: koinkyt
+    KOINKYT_HOST: https://explorer.coinkyt.com/openapi/v1
+    KOINKYT_RISK_PROFILE_IDS: ""
+    AML_DEFAULT_THRESHOLD: "0.10"
+    CHECK_TIMEOUT_SECONDS: "1800"
+    CHECK_RETRY_SECONDS: "120"
+    RECHECK_TXS_EVERY_SECONDS: "120"
+    KOINKYT_REQUEST_TIMEOUT_SECONDS: "10"
