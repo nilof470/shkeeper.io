@@ -1,18 +1,18 @@
-# Helm values overlay for the Koinkyt AML dev deployment.
+# Helm values snippet for the Koinkyt AML deployment.
 #
-# Use together with the existing VPS values file:
-#   helm upgrade -f /root/shkeeper-values.yaml -f /root/koinkyt-dev-values.yaml shkeeper vsys-host/shkeeper
+# Merge these values into the private /root/shkeeper-values.yaml on the target
+# server. Then deploy with the same command used for the TRON/re:Fee rollout:
+#   helm upgrade -f /root/shkeeper-values.yaml shkeeper vsys-host/shkeeper
 #
-# Do not put real API keys in this file. Inject KOINKYT_API_KEY through a
-# Kubernetes Secret after the Helm upgrade, as documented in
-# docs/KOINKYT_DEV_VPS_DEPLOY.md.
+# Do not commit real API keys. Put the real KOINKYT_API_KEY only in the private
+# values file on the VPS or in a private secret store.
 
 dev:
   imagePullSecrets:
     - name: ghcr-nilof470
 
 shkeeper:
-  image: ghcr.io/nilof470/shkeeper.io:koinkyt-dev
+  image: ghcr.io/nilof470/shkeeper.io:f8bbd4d
   extraEnv:
     AML_ENABLED: "true"
     AML_PROVIDER: koinkyt
@@ -28,10 +28,11 @@ aml:
   enabled: true
 
 aml_shkeeper:
-  image: ghcr.io/nilof470/aml-shkeeper:koinkyt-dev
+  image: ghcr.io/nilof470/aml-shkeeper:fcc7416
   extraEnv:
     CURRENT_PROVIDER: koinkyt
     KOINKYT_HOST: https://explorer.coinkyt.com/openapi/v1
+    KOINKYT_API_KEY: "REPLACE_WITH_KOINKYT_API_KEY"
     KOINKYT_RISK_PROFILE_IDS: ""
     AML_DEFAULT_THRESHOLD: "0.10"
     CHECK_TIMEOUT_SECONDS: "1800"
