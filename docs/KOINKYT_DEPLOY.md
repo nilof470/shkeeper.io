@@ -15,7 +15,7 @@ These images have been built locally for `linux/amd64`:
 
 ```text
 ghcr.io/nilof470/shkeeper.io:0e4c415
-ghcr.io/nilof470/aml-shkeeper:fcc7416
+ghcr.io/nilof470/aml-shkeeper:f17e309
 ```
 
 ## Build Or Push Images
@@ -26,7 +26,7 @@ If the local images already exist, push them:
 docker login ghcr.io -u nilof470
 
 docker push ghcr.io/nilof470/shkeeper.io:0e4c415
-docker push ghcr.io/nilof470/aml-shkeeper:fcc7416
+docker push ghcr.io/nilof470/aml-shkeeper:f17e309
 ```
 
 If rebuilding is needed, build and push immutable commit tags:
@@ -43,7 +43,7 @@ docker buildx build \
 cd /Users/test/PycharmProjects/aml-shkeeper
 docker buildx build \
   --platform linux/amd64 \
-  -t ghcr.io/nilof470/aml-shkeeper:fcc7416 \
+  -t ghcr.io/nilof470/aml-shkeeper:f17e309 \
   --push .
 ```
 
@@ -78,7 +78,7 @@ aml:
   enabled: true
 
 aml_shkeeper:
-  image: ghcr.io/nilof470/aml-shkeeper:fcc7416
+  image: ghcr.io/nilof470/aml-shkeeper:f17e309
   extraEnv:
     CURRENT_PROVIDER: koinkyt
     KOINKYT_HOST: https://explorer.coinkyt.com/openapi/v1
@@ -100,7 +100,7 @@ This is the direct analogue of the TRON command:
 
 ```bash
 SHKEEPER_TAG=0e4c415
-AML_TAG=fcc7416
+AML_TAG=f17e309
 
 sed -i "s|image: ghcr.io/nilof470/shkeeper.io:.*|image: ghcr.io/nilof470/shkeeper.io:${SHKEEPER_TAG}|" /root/shkeeper-values.yaml
 sed -i "s|image: ghcr.io/nilof470/aml-shkeeper:.*|image: ghcr.io/nilof470/aml-shkeeper:${AML_TAG}|" /root/shkeeper-values.yaml
@@ -153,7 +153,7 @@ Expected images:
 
 ```text
 ghcr.io/nilof470/shkeeper.io:0e4c415
-ghcr.io/nilof470/aml-shkeeper:fcc7416 ghcr.io/nilof470/aml-shkeeper:fcc7416 redis
+ghcr.io/nilof470/aml-shkeeper:f17e309 ghcr.io/nilof470/aml-shkeeper:f17e309 redis
 ```
 
 Verify AML env:

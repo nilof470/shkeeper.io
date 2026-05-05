@@ -28,7 +28,7 @@ aml:
   enabled: true
 
 aml_shkeeper:
-  image: ghcr.io/nilof470/aml-shkeeper:fcc7416
+  image: ghcr.io/nilof470/aml-shkeeper:f17e309
   extraEnv:
     CURRENT_PROVIDER: koinkyt
     KOINKYT_HOST: https://explorer.coinkyt.com/openapi/v1
