@@ -15,17 +15,18 @@ docker login ghcr.io -u nilof470
 cd /Users/test/PycharmProjects/shkeeper.io
 docker buildx build \
   --platform linux/amd64 \
-  -t ghcr.io/nilof470/shkeeper.io:982c804 \
+  -t ghcr.io/nilof470/shkeeper.io:koinkyt-dev \
   --push .
 
 cd /Users/test/PycharmProjects/aml-shkeeper
 docker buildx build \
   --platform linux/amd64 \
-  -t ghcr.io/nilof470/aml-shkeeper:f2a25dd \
+  -t ghcr.io/nilof470/aml-shkeeper:koinkyt-dev \
   --push .
 ```
 
-The image tags are tied to the current integration commits:
+The mutable dev image tag is `koinkyt-dev`. The Koinkyt integration code was
+introduced in these commits:
 
 - `shkeeper.io`: `982c804`
 - `aml-shkeeper`: `f2a25dd`
@@ -138,8 +139,8 @@ kubectl exec -n shkeeper deployment/aml-shkeeper -c app -- env | grep -E '^(CURR
 Expected images:
 
 ```text
-ghcr.io/nilof470/shkeeper.io:982c804
-ghcr.io/nilof470/aml-shkeeper:f2a25dd ghcr.io/nilof470/aml-shkeeper:f2a25dd redis
+ghcr.io/nilof470/shkeeper.io:koinkyt-dev
+ghcr.io/nilof470/aml-shkeeper:koinkyt-dev ghcr.io/nilof470/aml-shkeeper:koinkyt-dev redis
 ```
 
 ## Smoke Test Without A Real Koinkyt Check
