@@ -14,7 +14,7 @@ IDs, thresholds, and other operational settings.
 These images have been built locally for `linux/amd64`:
 
 ```text
-ghcr.io/nilof470/shkeeper.io:f8bbd4d
+ghcr.io/nilof470/shkeeper.io:0e4c415
 ghcr.io/nilof470/aml-shkeeper:fcc7416
 ```
 
@@ -25,7 +25,7 @@ If the local images already exist, push them:
 ```bash
 docker login ghcr.io -u nilof470
 
-docker push ghcr.io/nilof470/shkeeper.io:f8bbd4d
+docker push ghcr.io/nilof470/shkeeper.io:0e4c415
 docker push ghcr.io/nilof470/aml-shkeeper:fcc7416
 ```
 
@@ -37,7 +37,7 @@ docker login ghcr.io -u nilof470
 cd /Users/test/PycharmProjects/shkeeper.io
 docker buildx build \
   --platform linux/amd64 \
-  -t ghcr.io/nilof470/shkeeper.io:f8bbd4d \
+  -t ghcr.io/nilof470/shkeeper.io:0e4c415 \
   --push .
 
 cd /Users/test/PycharmProjects/aml-shkeeper
@@ -62,7 +62,7 @@ dev:
     - name: ghcr-nilof470
 
 shkeeper:
-  image: ghcr.io/nilof470/shkeeper.io:f8bbd4d
+  image: ghcr.io/nilof470/shkeeper.io:0e4c415
   extraEnv:
     AML_ENABLED: "true"
     AML_PROVIDER: koinkyt
@@ -99,7 +99,7 @@ that the deployment is dev-only.
 This is the direct analogue of the TRON command:
 
 ```bash
-SHKEEPER_TAG=f8bbd4d
+SHKEEPER_TAG=0e4c415
 AML_TAG=fcc7416
 
 sed -i "s|image: ghcr.io/nilof470/shkeeper.io:.*|image: ghcr.io/nilof470/shkeeper.io:${SHKEEPER_TAG}|" /root/shkeeper-values.yaml
@@ -152,7 +152,7 @@ kubectl get deployment aml-shkeeper -n shkeeper \
 Expected images:
 
 ```text
-ghcr.io/nilof470/shkeeper.io:f8bbd4d
+ghcr.io/nilof470/shkeeper.io:0e4c415
 ghcr.io/nilof470/aml-shkeeper:fcc7416 ghcr.io/nilof470/aml-shkeeper:fcc7416 redis
 ```
 

@@ -12,7 +12,7 @@ dev:
     - name: ghcr-nilof470
 
 shkeeper:
-  image: ghcr.io/nilof470/shkeeper.io:f8bbd4d
+  image: ghcr.io/nilof470/shkeeper.io:0e4c415
   extraEnv:
     AML_ENABLED: "true"
     AML_PROVIDER: koinkyt
