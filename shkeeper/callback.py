@@ -42,10 +42,16 @@ def _aml_checked(aml_check):
 
 
 def _aml_check_status(aml_check):
-    if _aml_checked(aml_check):
-        return "success"
     if aml_check.skip_reason:
         return "skipped"
+    if _aml_checked(aml_check):
+        return "success"
+    if aml_check.decision_reason == "aml_pending_timeout":
+        return "timeout"
+    if aml_check.decision_reason == "aml_provider_error":
+        return "error"
+    if aml_check.decision_reason == "incomplete_aml_result":
+        return "incomplete"
     if aml_check.provider_status in ("timeout", "error"):
         return aml_check.provider_status
     if aml_check.error_code in ("missing_risk_score", "incomplete_aml_result"):
@@ -58,14 +64,14 @@ def _aml_check_status(aml_check):
 def _aml_reason_code(aml_check):
     if aml_check.skip_reason == "amount_below_threshold":
         return "amount_below_shkeeper_threshold"
-    if aml_check.error_code:
-        return aml_check.error_code
     if aml_check.decision_reason in (
         "aml_pending_timeout",
         "aml_provider_error",
         "incomplete_aml_result",
     ):
         return aml_check.decision_reason
+    if aml_check.error_code:
+        return aml_check.error_code
     if aml_check.provider_status in ("pending", "checking"):
         return None
     if not _aml_checked(aml_check):

@@ -204,6 +204,26 @@ class AmlCallbackPayloadTestCase(unittest.TestCase):
         self.assertNotIn("deposit_decision", trigger)
         self.assertNotIn("decision_reason", trigger)
 
+    def test_terminal_provider_error_is_not_reported_as_checking(self):
+        tx = self.make_tx()
+        check = self.add_check(
+            tx,
+            decision=DepositDecision.MANUAL_REVIEW,
+            reason="aml_provider_error",
+        )
+        check.provider_status = "checking"
+        check.score = None
+        check.error_code = "http_429"
+        db.session.commit()
+
+        trigger = build_payment_notification(tx)["transactions"][0]
+
+        self.assertEqual(trigger["aml"]["checked"], False)
+        self.assertEqual(trigger["aml"]["check_status"], "error")
+        self.assertEqual(trigger["aml"]["reason_code"], "aml_provider_error")
+        self.assertEqual(trigger["aml"]["provider_status"], "checking")
+        self.assertEqual(trigger["aml"]["error_code"], "http_429")
+
     def test_static_address_partial_invoice_can_credit_trigger_transaction(self):
         tx = self.make_tx(status=InvoiceStatus.PARTIAL)
         self.add_check(tx)
