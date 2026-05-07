@@ -29,6 +29,10 @@ callback states such as `manual_review` for assets not covered by Koinkyt.
 For every trigger transaction, SHKeeper should include an `aml` object with:
 
 - `checked`: whether an AML provider produced a usable AML result.
+- `supported`: whether the configured AML provider supports this asset/network.
+- `check_status`: technical AML state such as `success`, `skipped`,
+  `unsupported`, `timeout`, `error`, or `incomplete`.
+- `reason_code`: technical explanation when `checked=false`.
 - `provider`: configured AML provider, for example `koinkyt`.
 - `provider_status`: technical provider status such as `success`, `pending`,
   `error`, `timeout`, or `unsupported`.
@@ -40,6 +44,7 @@ For every trigger transaction, SHKeeper should include an `aml` object with:
 - `report_url`: provider report URL when available.
 - `error_code`: technical error code when AML was not checked successfully.
 - `error_message`: technical error message when AML was not checked successfully.
+- `policy`: local SHKeeper AML skip policy metadata when applicable.
 
 SHKeeper callback payloads must not expose:
 
@@ -57,7 +62,10 @@ must not block the payment callback. It should send:
 ```json
 {
   "aml": {
+    "supported": false,
     "checked": false,
+    "check_status": "unsupported",
+    "reason_code": "unsupported_asset",
     "provider": "koinkyt",
     "provider_status": "unsupported",
     "score": null,
@@ -67,7 +75,8 @@ must not block the payment callback. It should send:
     "signals": {},
     "report_url": null,
     "error_code": "unsupported_asset",
-    "error_message": "AML provider does not support this asset"
+    "error_message": "AML provider does not support this asset",
+    "policy": {}
   }
 }
 ```

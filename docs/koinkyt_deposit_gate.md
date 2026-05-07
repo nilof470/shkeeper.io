@@ -30,6 +30,10 @@ state fields, not credit decisions.
 Every trigger transaction includes `aml` metadata:
 
 - `aml.checked`: whether a provider produced a usable AML result.
+- `aml.supported`: whether the configured provider supports this asset/network.
+- `aml.check_status`: technical AML state such as `success`, `skipped`,
+  `unsupported`, `timeout`, `error`, or `incomplete`.
+- `aml.reason_code`: technical explanation when `aml.checked=false`.
 - `aml.provider`
 - `aml.provider_status`
 - `aml.score`
@@ -40,10 +44,16 @@ Every trigger transaction includes `aml` metadata:
 - `aml.report_url`
 - `aml.error_code`
 - `aml.error_message`
+- `aml.policy`: local SHKeeper AML skip policy metadata when applicable.
 
 Unsupported AML assets, for example BNB/BEP20 or TON assets while the provider
 does not cover them, are sent as normal payment callbacks with
 `aml.checked=false` and `aml.provider_status=unsupported`.
+
+Supported assets skipped by local SHKeeper thresholds are sent with
+`aml.supported=true`, `aml.checked=false`, `aml.check_status=skipped`, and
+`aml.reason_code=amount_below_shkeeper_threshold`. Threshold details are placed
+under `aml.policy` so grither-pay can make its own final decision.
 
 SHKeeper merchant callbacks do not include:
 

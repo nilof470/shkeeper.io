@@ -15,6 +15,8 @@ File: `shkeeper/callback.py`
 
 Lines: 62-75
 
+Status: fixed after review.
+
 For supported assets that SHKeeper skips because of `AML_MIN_CHECK_AMOUNT_FIAT`
 or cumulative skip policy, `build_skipped_check()` creates an `AmlCheck` with
 `provider_status=None`, `score=None`, and no `error_code`. The new callback
@@ -32,6 +34,11 @@ The fix should add neutral technical metadata for local skips, for example
 `provider_status="skipped"` and `error_code="aml_skipped_by_shkeeper_policy"`,
 or remove SHKeeper-side skip policy entirely if grither-pay should fully own AML
 threshold decisions.
+
+Resolution: callback AML payload now includes `supported`, `check_status`,
+`reason_code`, and `policy`. Local threshold skips are represented as
+`supported=true`, `checked=false`, `check_status=skipped`, and
+`reason_code=amount_below_shkeeper_threshold`.
 
 ### LOW: Unsupported legacy `AmlCheck` rows will produce incomplete unsupported metadata
 

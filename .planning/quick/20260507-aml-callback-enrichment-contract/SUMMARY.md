@@ -14,6 +14,8 @@ Implemented the AML callback enrichment contract.
   callbacks.
 - Callback transaction AML data now uses factual enrichment fields with
   `aml.checked`.
+- `aml.supported`, `aml.check_status`, `aml.reason_code`, and `aml.policy`
+  explain unchecked AML cases without returning business decisions.
 - Merchant callback no longer emits `deposit_decision`, `decision_reason`, AML
   `status`, or AML `threshold`.
 - Unsupported assets are represented as `aml.checked=false` with

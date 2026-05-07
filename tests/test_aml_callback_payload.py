@@ -131,7 +131,10 @@ class AmlCallbackPayloadTestCase(unittest.TestCase):
 
         self.assertNotIn("deposit_decision", trigger)
         self.assertNotIn("decision_reason", trigger)
+        self.assertEqual(trigger["aml"]["supported"], True)
         self.assertEqual(trigger["aml"]["checked"], True)
+        self.assertEqual(trigger["aml"]["check_status"], "success")
+        self.assertIsNone(trigger["aml"]["reason_code"])
         self.assertEqual(trigger["aml"]["provider"], "koinkyt")
         self.assertEqual(trigger["aml"]["score"], "0.04")
         self.assertEqual(trigger["aml"]["signals"], {"mixer": 0.01})
@@ -154,9 +157,17 @@ class AmlCallbackPayloadTestCase(unittest.TestCase):
 
         trigger = build_payment_notification(tx)["transactions"][0]
 
+        self.assertEqual(trigger["aml"]["supported"], True)
         self.assertEqual(trigger["aml"]["checked"], False)
+        self.assertEqual(trigger["aml"]["check_status"], "skipped")
+        self.assertEqual(
+            trigger["aml"]["reason_code"], "amount_below_shkeeper_threshold"
+        )
         self.assertIsNone(trigger["aml"]["score"])
         self.assertNotIn("cumulative_limit_fiat", trigger["aml"])
+        self.assertEqual(trigger["aml"]["policy"]["min_check_amount_fiat"], "100")
+        self.assertEqual(trigger["aml"]["policy"]["cumulative_limit_fiat"], "300")
+        self.assertEqual(trigger["aml"]["policy"]["cumulative_window"], "24h")
         self.assertNotIn("deposit_decision", trigger)
         self.assertNotIn("decision_reason", trigger)
 
@@ -172,7 +183,9 @@ class AmlCallbackPayloadTestCase(unittest.TestCase):
 
         self.assertNotIn("deposit_decision", trigger)
         self.assertNotIn("decision_reason", trigger)
+        self.assertEqual(trigger["aml"]["supported"], True)
         self.assertEqual(trigger["aml"]["checked"], True)
+        self.assertEqual(trigger["aml"]["check_status"], "success")
         self.assertEqual(trigger["aml"]["score"], "0.72")
 
     def test_unsupported_callback_contains_unchecked_aml_payload(self):
@@ -182,7 +195,10 @@ class AmlCallbackPayloadTestCase(unittest.TestCase):
 
         trigger = build_payment_notification(tx)["transactions"][0]
 
+        self.assertEqual(trigger["aml"]["supported"], False)
         self.assertEqual(trigger["aml"]["checked"], False)
+        self.assertEqual(trigger["aml"]["check_status"], "unsupported")
+        self.assertEqual(trigger["aml"]["reason_code"], "unsupported_asset")
         self.assertEqual(trigger["aml"]["provider_status"], "unsupported")
         self.assertEqual(trigger["aml"]["error_code"], "unsupported_asset")
         self.assertNotIn("deposit_decision", trigger)

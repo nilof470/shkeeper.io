@@ -41,11 +41,65 @@ def _aml_checked(aml_check):
     )
 
 
+def _aml_check_status(aml_check):
+    if _aml_checked(aml_check):
+        return "success"
+    if aml_check.skip_reason:
+        return "skipped"
+    if aml_check.provider_status in ("timeout", "error"):
+        return aml_check.provider_status
+    if aml_check.error_code in ("missing_risk_score", "incomplete_aml_result"):
+        return "incomplete"
+    if aml_check.provider_status in ("pending", "checking"):
+        return aml_check.provider_status
+    return "incomplete"
+
+
+def _aml_reason_code(aml_check):
+    if aml_check.skip_reason == "amount_below_threshold":
+        return "amount_below_shkeeper_threshold"
+    if aml_check.error_code:
+        return aml_check.error_code
+    if aml_check.decision_reason in (
+        "aml_pending_timeout",
+        "aml_provider_error",
+        "incomplete_aml_result",
+    ):
+        return aml_check.decision_reason
+    if aml_check.provider_status in ("pending", "checking"):
+        return None
+    if not _aml_checked(aml_check):
+        return "incomplete_aml_result"
+    return None
+
+
+def _aml_policy_payload(aml_check):
+    policy = {}
+    if aml_check.min_check_amount_fiat is not None:
+        policy["min_check_amount_fiat"] = remove_exponent(
+            aml_check.min_check_amount_fiat
+        )
+    if aml_check.cumulative_amount_fiat is not None:
+        policy["cumulative_amount_fiat"] = remove_exponent(
+            aml_check.cumulative_amount_fiat
+        )
+    if aml_check.cumulative_limit_fiat is not None:
+        policy["cumulative_limit_fiat"] = remove_exponent(
+            aml_check.cumulative_limit_fiat
+        )
+    if aml_check.cumulative_window is not None:
+        policy["cumulative_window"] = aml_check.cumulative_window
+    return policy
+
+
 def _unsupported_aml_payload(tx):
     policy = get_coverage_policy(tx.crypto)
     reason = policy.get("reason") or "unsupported_asset"
     return {
+        "supported": False,
         "checked": False,
+        "check_status": "unsupported",
+        "reason_code": reason,
         "provider": policy.get("provider"),
         "provider_status": "unsupported",
         "score": None,
@@ -56,12 +110,16 @@ def _unsupported_aml_payload(tx):
         "report_url": None,
         "error_code": reason,
         "error_message": "AML provider does not support this asset",
+        "policy": {},
     }
 
 
 def _aml_payload(aml_check):
     payload = {
+        "supported": True,
         "checked": _aml_checked(aml_check),
+        "check_status": _aml_check_status(aml_check),
+        "reason_code": _aml_reason_code(aml_check),
         "provider": aml_check.provider,
         "provider_status": aml_check.provider_status,
         "score": _decimal_or_none(aml_check.score),
@@ -72,6 +130,7 @@ def _aml_payload(aml_check):
         "report_url": aml_check.report_url,
         "error_code": aml_check.error_code,
         "error_message": aml_check.error_message,
+        "policy": _aml_policy_payload(aml_check),
     }
     return payload
 

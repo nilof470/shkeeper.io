@@ -18,6 +18,8 @@ Implement the AML callback enrichment contract from `SPEC.md`.
    - `checked=true` for usable provider success results.
    - `checked=false` for unsupported assets, skipped checks, provider errors,
      missing scores, and timeouts.
+   - `supported`, `check_status`, `reason_code`, and `policy` explain why
+     `checked=false` without making a business decision.
 3. Remove business decision fields from merchant callback payloads:
    `deposit_decision`, `decision_reason`, AML `status`, and AML `threshold`.
 4. Keep technical AML provider data in callback payloads:
