@@ -36,7 +36,7 @@ class AmlCoverageTestCase(unittest.TestCase):
 
     def test_unsupported_mapping_fails_closed(self):
         policy = get_coverage_policy("BTC-LIGHTNING")
-        self.assertEqual(policy["status"], "unsupported_manual_review")
+        self.assertEqual(policy["status"], "unsupported")
         self.assertEqual(policy["reason"], "limited_analysis_requires_review")
 
 

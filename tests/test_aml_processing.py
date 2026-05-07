@@ -95,13 +95,13 @@ class AmlProcessingTestCase(unittest.TestCase):
         db.session.commit()
         return tx
 
-    def test_unsupported_asset_terminal_manual_review(self):
+    def test_unsupported_asset_bypasses_aml_check(self):
         tx = self.make_tx("150", crypto="BTC-LIGHTNING")
         check = aml_processing.ensure_aml_for_transaction(tx)
 
-        self.assertEqual(check.status, AmlStatus.MANUAL_REVIEW)
-        self.assertEqual(check.deposit_decision, DepositDecision.MANUAL_REVIEW)
-        self.assertEqual(check.decision_reason, "limited_analysis_requires_review")
+        self.assertIsNone(check)
+        self.assertTrue(aml_processing.is_callback_allowed(tx))
+        self.assertEqual(AmlCheck.query.count(), 0)
 
     def test_skip_does_not_call_provider(self):
         tx = self.make_tx("50")

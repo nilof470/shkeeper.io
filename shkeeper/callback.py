@@ -10,6 +10,7 @@ from shkeeper.services.aml_processing import (
     ensure_aml_for_transaction,
     is_callback_allowed,
 )
+from shkeeper.services.aml_coverage import SUPPORTED_STATUS, get_coverage_policy
 from datetime import datetime, timedelta
 
 bp = Blueprint("callback", __name__)
@@ -32,50 +33,57 @@ def _decimal_or_none(value):
     return remove_exponent(value)
 
 
+def _aml_checked(aml_check):
+    return (
+        aml_check.provider_status == "success"
+        and aml_check.score is not None
+        and aml_check.error_code is None
+    )
+
+
+def _unsupported_aml_payload(tx):
+    policy = get_coverage_policy(tx.crypto)
+    reason = policy.get("reason") or "unsupported_asset"
+    return {
+        "checked": False,
+        "provider": policy.get("provider"),
+        "provider_status": "unsupported",
+        "score": None,
+        "uid": None,
+        "asset": policy.get("asset"),
+        "network": policy.get("network"),
+        "signals": {},
+        "report_url": None,
+        "error_code": reason,
+        "error_message": "AML provider does not support this asset",
+    }
+
+
 def _aml_payload(aml_check):
     payload = {
+        "checked": _aml_checked(aml_check),
         "provider": aml_check.provider,
         "provider_status": aml_check.provider_status,
-        "status": aml_check.status,
         "score": _decimal_or_none(aml_check.score),
-        "threshold": _decimal_or_none(aml_check.threshold),
         "uid": aml_check.uid,
         "asset": aml_check.asset,
         "network": aml_check.network,
         "signals": _json_object(aml_check.signals_json),
+        "report_url": aml_check.report_url,
+        "error_code": aml_check.error_code,
+        "error_message": aml_check.error_message,
     }
-    optional_fields = (
-        "report_url",
-        "error_code",
-        "error_message",
-        "skip_reason",
-        "min_check_amount_fiat",
-        "cumulative_window",
-        "cumulative_amount_fiat",
-        "cumulative_limit_fiat",
-    )
-    for field in optional_fields:
-        value = getattr(aml_check, field)
-        if value is None:
-            continue
-        if field.endswith("_fiat") or field in (
-            "min_check_amount_fiat",
-            "cumulative_amount_fiat",
-            "cumulative_limit_fiat",
-        ):
-            value = remove_exponent(value)
-        payload[field] = value
     return payload
 
 
 def _add_aml_to_trigger_transaction(item, trigger_tx):
     aml_check = trigger_tx.aml_check
     if not aml_check:
+        if get_coverage_policy(trigger_tx.crypto)["status"] != SUPPORTED_STATUS:
+            item["aml"] = _unsupported_aml_payload(trigger_tx)
         return item
     item["deposit_id"] = aml_check.deposit_id
     item["idempotency_key"] = aml_check.idempotency_key
-    item["deposit_decision"] = aml_check.deposit_decision
-    item["decision_reason"] = aml_check.decision_reason
     item["aml"] = _aml_payload(aml_check)
     return item
 

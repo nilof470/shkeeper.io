@@ -4,7 +4,7 @@ from flask import current_app, has_app_context
 
 
 SUPPORTED_STATUS = "provider_supported"
-UNSUPPORTED_STATUS = "unsupported_manual_review"
+UNSUPPORTED_STATUS = "unsupported"
 DEFAULT_PROVIDER = "koinkyt"
 
 

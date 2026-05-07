@@ -4,13 +4,13 @@ import unittest
 
 
 class AmlContractDocsTestCase(unittest.TestCase):
-    def test_aml_docs_include_grither_pay_credit_rule(self):
+    def test_aml_docs_include_grither_pay_decision_boundary(self):
         content = pathlib.Path("docs/koinkyt_deposit_gate.md").read_text()
 
         for required in (
-            "deposit_decision",
-            "manual_review",
-            "amount_below_aml_threshold",
+            "AML enrichment",
+            "does not emit merchant-facing business",
+            "aml.checked",
             "AML_MIN_CHECK_AMOUNT_FIAT=100",
             "AML_SKIP_CUMULATIVE_LIMIT_FIAT=300",
             "transactions[].trigger == true",
@@ -26,11 +26,17 @@ class AmlContractDocsTestCase(unittest.TestCase):
             "ETH-USDT -> blockchain=eth, token=USDT",
             "USDC -> blockchain=trx, token=USDC",
             "risk_score",
-            "risk_profile_alert",
             "too_many_indirects",
             "/transfer",
         ):
             self.assertIn(required, content)
+
+        for removed in (
+            'deposit_decision="credit"',
+            'deposit_decision="manual_review"',
+            'decision_reason="risk_profile_alert"',
+        ):
+            self.assertNotIn(removed, content)
 
     def test_saved_koinkyt_openapi_matches_integration_contract(self):
         spec = json.loads(pathlib.Path("docs/koinkyt_openapi.json").read_text())

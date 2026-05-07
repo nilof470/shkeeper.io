@@ -1,40 +1,56 @@
 # Koinkyt Deposit Gate
 
-SHKeeper uses Koinkyt for AML deposit decisions by default. AMLBot is retained only
+SHKeeper uses Koinkyt for AML enrichment by default. AMLBot is retained only
 as an explicit fallback provider for legacy deployments.
 
 ## Ownership
 
-SHKeeper accepts deposits, applies local AML policy, calls `aml-shkeeper`, stores the AML snapshot returned by the sidecar, and sends callbacks to `grither-pay`. `aml-shkeeper` owns the Koinkyt provider call.
+SHKeeper accepts deposits, calls `aml-shkeeper` for supported AML assets, stores
+the AML snapshot returned by the sidecar, and sends callbacks to `grither-pay`.
+`aml-shkeeper` owns the Koinkyt provider call.
 
-`grither-pay` owns balance crediting and manual review. SHKeeper never credits `grither-pay` balances.
+`grither-pay` owns balance crediting, thresholds, and manual review. SHKeeper
+never credits `grither-pay` balances and does not emit merchant-facing business
+decision fields such as `deposit_decision` or `decision_reason`.
 
 ## Static Addresses
 
 Static address mode can reuse a large invoice per user and coin. Invoice fields such as `paid`, `status`, `balance_fiat`, and `balance_crypto` are invoice accounting fields, not credit decisions.
 
-`grither-pay` credits only the trigger transaction where `transactions[].trigger == true` and `deposit_decision="credit"`. Any other `deposit_decision` goes to manual review in `grither-pay`.
+`grither-pay` evaluates the trigger transaction where
+`transactions[].trigger == true`. If SHKeeper has AML data for that transaction,
+it is attached as factual `transactions[].aml` metadata.
 
-## Decisions
+## Merchant Callback Contract
 
-Canonical `deposit_decision` values:
+SHKeeper callback payloads keep invoice accounting fields such as `paid`,
+`status`, `balance_fiat`, and `balance_crypto`. Those are blockchain/payment
+state fields, not credit decisions.
 
-- `credit`
-- `manual_review`
+Every trigger transaction includes `aml` metadata:
 
-Canonical `decision_reason` values:
+- `aml.checked`: whether a provider produced a usable AML result.
+- `aml.provider`
+- `aml.provider_status`
+- `aml.score`
+- `aml.uid`
+- `aml.asset`
+- `aml.network`
+- `aml.signals`
+- `aml.report_url`
+- `aml.error_code`
+- `aml.error_message`
 
-- `score_below_threshold`
-- `amount_below_aml_threshold`
-- `risk_score_above_threshold`
-- `aml_pending_timeout`
-- `aml_provider_error`
-- `unsupported_asset`
-- `incomplete_aml_result`
-- `limited_analysis_requires_review`
-- `cumulative_threshold_exceeded`
-- `risk_profile_alert`
-- `too_many_indirects`
+Unsupported AML assets, for example BNB/BEP20 or TON assets while the provider
+does not cover them, are sent as normal payment callbacks with
+`aml.checked=false` and `aml.provider_status=unsupported`.
+
+SHKeeper merchant callbacks do not include:
+
+- `deposit_decision`
+- `decision_reason`
+- AML `status`
+- AML `threshold`
 
 ## Default Limits
 
@@ -94,11 +110,15 @@ Documented Koinkyt coverage from `API_Documentation.pdf`:
 - `USDT -> blockchain=trx, token=USDT`
 - `USDC -> blockchain=trx, token=USDC`
 
-Other enabled SHKeeper assets fail closed to `manual_review` with `unsupported_asset` or a more specific limited-analysis reason until Koinkyt support is verified separately.
+Other enabled SHKeeper assets bypass AML enrichment until Koinkyt support is
+verified separately. Business handling for those deposits belongs in
+`grither-pay`.
 
 ## Response Mapping
 
-Koinkyt returns `risk_score`; SHKeeper compares it with `AML_MAX_ACCEPT_SCORE`.
+Koinkyt returns `risk_score`; SHKeeper stores and forwards it as AML metadata.
+`grither-pay` decides what score, missing data, alerts, or provider errors mean
+for crediting.
 
 | Koinkyt field | SHKeeper field | Notes |
 |---|---|---|
@@ -109,9 +129,10 @@ Koinkyt returns `risk_score`; SHKeeper compares it with `AML_MAX_ACCEPT_SCORE`.
 | `from_entity`, `to_entity`, `indirects`, `alerts`, `too_many_indirects` | `aml.signals` and raw snapshot | Provider evidence retained for review/debugging. |
 | full JSON body | `raw_response_json` | Internal audit snapshot, not a stable merchant callback contract. |
 
-If `risk_score <= AML_MAX_ACCEPT_SCORE`, SHKeeper emits `deposit_decision="credit"` and `decision_reason="score_below_threshold"`. If `risk_score` is above the threshold, missing, or invalid, SHKeeper emits `deposit_decision="manual_review"`.
-
-If `risk_profile_ids` are configured and Koinkyt returns any `alerts`, SHKeeper treats the trigger transaction as `manual_review` with `decision_reason="risk_profile_alert"` even if the numeric `risk_score` is below `AML_MAX_ACCEPT_SCORE`. If Koinkyt returns `too_many_indirects=true`, SHKeeper treats the result as incomplete for automatic credit and emits `decision_reason="too_many_indirects"`.
+SHKeeper does not expose `deposit_decision`, `decision_reason`, AML `status`, or
+AML `threshold` in merchant callbacks. If `risk_profile_ids` are configured and
+Koinkyt returns `alerts`, the alerts are forwarded in `aml.signals` for
+`grither-pay` to evaluate.
 
 OpenAPI notes for risk profiles:
 
@@ -122,14 +143,14 @@ OpenAPI notes for risk profiles:
 
 ## Failure Policy
 
-Provider failures never auto-credit a deposit.
+Provider failures never create a SHKeeper credit decision.
 
-- `401`, `403`, `400`, `422`: hard provider error, fail closed to `manual_review`.
-- `429`, `500`, `503`: retry until `AML_PENDING_TIMEOUT_SECONDS`, then `manual_review`.
-- Transport errors and request timeouts: retry until `AML_PENDING_TIMEOUT_SECONDS`, then `manual_review`.
-- `404`: ambiguous in the PDF. Treat `"No data, please try again later"` as retryable; final not-found shapes require live response validation or timeout before manual review.
-- Missing `risk_score` in an otherwise successful response: `incomplete_aml_result`, `manual_review`.
-- Missing `KOINKYT_API_KEY` in `aml-shkeeper`: `aml_provider_error`, `manual_review`.
+- `401`, `403`, `400`, `422`: hard provider error, forwarded as AML error metadata.
+- `429`, `500`, `503`: retry until `AML_PENDING_TIMEOUT_SECONDS`, then forward timeout/error metadata.
+- Transport errors and request timeouts: retry until `AML_PENDING_TIMEOUT_SECONDS`, then forward timeout/error metadata.
+- `404`: ambiguous in the PDF. Treat `"No data, please try again later"` as retryable; final not-found shapes require live response validation or timeout before forwarding error metadata.
+- Missing `risk_score` in an otherwise successful response: forwarded as incomplete AML metadata.
+- Missing `KOINKYT_API_KEY` in `aml-shkeeper`: forwarded as provider error metadata.
 
 ## Live Probe Checklist
 

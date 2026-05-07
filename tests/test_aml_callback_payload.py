@@ -122,19 +122,23 @@ class AmlCallbackPayloadTestCase(unittest.TestCase):
         db.session.commit()
         return check
 
-    def test_approved_callback_contains_aml_fields(self):
+    def test_approved_callback_contains_aml_data_without_business_decision(self):
         tx = self.make_tx()
         self.add_check(tx)
 
         payload = build_payment_notification(tx)
         trigger = payload["transactions"][0]
 
-        self.assertEqual(trigger["deposit_decision"], "credit")
-        self.assertEqual(trigger["decision_reason"], "score_below_threshold")
+        self.assertNotIn("deposit_decision", trigger)
+        self.assertNotIn("decision_reason", trigger)
+        self.assertEqual(trigger["aml"]["checked"], True)
         self.assertEqual(trigger["aml"]["provider"], "koinkyt")
+        self.assertEqual(trigger["aml"]["score"], "0.04")
         self.assertEqual(trigger["aml"]["signals"], {"mixer": 0.01})
+        self.assertNotIn("status", trigger["aml"])
+        self.assertNotIn("threshold", trigger["aml"])
 
-    def test_skipped_callback_contains_cumulative_metadata(self):
+    def test_skipped_callback_contains_unchecked_aml_without_business_metadata(self):
         tx = self.make_tx()
         check = self.add_check(tx)
         check.status = AmlStatus.SKIPPED
@@ -150,11 +154,13 @@ class AmlCallbackPayloadTestCase(unittest.TestCase):
 
         trigger = build_payment_notification(tx)["transactions"][0]
 
+        self.assertEqual(trigger["aml"]["checked"], False)
         self.assertIsNone(trigger["aml"]["score"])
-        self.assertEqual(trigger["aml"]["cumulative_limit_fiat"], "300")
-        self.assertEqual(trigger["decision_reason"], "amount_below_aml_threshold")
+        self.assertNotIn("cumulative_limit_fiat", trigger["aml"])
+        self.assertNotIn("deposit_decision", trigger)
+        self.assertNotIn("decision_reason", trigger)
 
-    def test_manual_review_callback_contains_reason(self):
+    def test_manual_review_callback_contains_aml_data_without_business_decision(self):
         tx = self.make_tx()
         self.add_check(
             tx,
@@ -164,8 +170,23 @@ class AmlCallbackPayloadTestCase(unittest.TestCase):
 
         trigger = build_payment_notification(tx)["transactions"][0]
 
-        self.assertEqual(trigger["deposit_decision"], "manual_review")
-        self.assertEqual(trigger["decision_reason"], "risk_score_above_threshold")
+        self.assertNotIn("deposit_decision", trigger)
+        self.assertNotIn("decision_reason", trigger)
+        self.assertEqual(trigger["aml"]["checked"], True)
+        self.assertEqual(trigger["aml"]["score"], "0.72")
+
+    def test_unsupported_callback_contains_unchecked_aml_payload(self):
+        tx = self.make_tx()
+        tx.crypto = "BNB"
+        db.session.commit()
+
+        trigger = build_payment_notification(tx)["transactions"][0]
+
+        self.assertEqual(trigger["aml"]["checked"], False)
+        self.assertEqual(trigger["aml"]["provider_status"], "unsupported")
+        self.assertEqual(trigger["aml"]["error_code"], "unsupported_asset")
+        self.assertNotIn("deposit_decision", trigger)
+        self.assertNotIn("decision_reason", trigger)
 
     def test_static_address_partial_invoice_can_credit_trigger_transaction(self):
         tx = self.make_tx(status=InvoiceStatus.PARTIAL)
@@ -175,7 +196,8 @@ class AmlCallbackPayloadTestCase(unittest.TestCase):
 
         self.assertFalse(payload["paid"])
         self.assertEqual(payload["status"], "PARTIAL")
-        self.assertEqual(payload["transactions"][0]["deposit_decision"], "credit")
+        self.assertNotIn("deposit_decision", payload["transactions"][0])
+        self.assertEqual(payload["transactions"][0]["aml"]["score"], "0.04")
 
     def test_retry_payload_is_stable(self):
         tx = self.make_tx()

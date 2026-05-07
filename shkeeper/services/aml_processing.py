@@ -12,7 +12,6 @@ from shkeeper.services.aml_policy import (
     decision_from_provider_result,
     is_terminal,
     should_skip_aml,
-    unsupported_check,
 )
 from shkeeper.services.aml_shkeeper_client import AmlShkeeperClient
 
@@ -122,6 +121,8 @@ def _resolve_timeout(check):
     check.deposit_decision = DepositDecision.MANUAL_REVIEW
     check.decision_reason = "aml_pending_timeout"
     check.provider_status = "timeout"
+    check.error_code = check.error_code or "aml_pending_timeout"
+    check.error_message = check.error_message or "AML provider result timed out"
     check.next_retry_at = None
     db.session.add(check)
     db.session.commit()
@@ -136,7 +137,12 @@ def ensure_aml_for_transaction(tx):
 
     coverage = get_coverage_policy(tx.crypto)
     if coverage["status"] != SUPPORTED_STATUS:
-        return _persist_new_check(unsupported_check(tx))
+        current_app.logger.info(
+            "[%s/%s] AML provider does not support asset, sending callback without AML enrichment",
+            tx.crypto,
+            tx.txid,
+        )
+        return None
 
     if should_skip_aml(tx):
         return _persist_new_check(build_skipped_check(tx))
@@ -175,4 +181,6 @@ def process_pending_aml_checks(now=None):
 def is_callback_allowed(tx):
     if tx.invoice.status == InvoiceStatus.OUTGOING:
         return True
+    if tx.aml_check is None:
+        return get_coverage_policy(tx.crypto)["status"] != SUPPORTED_STATUS
     return is_terminal(tx.aml_check)

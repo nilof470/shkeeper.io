@@ -218,6 +218,8 @@ def decision_from_provider_result(tx, result):
         check.status = AmlStatus.MANUAL_REVIEW
         check.deposit_decision = DepositDecision.MANUAL_REVIEW
         check.decision_reason = "aml_pending_timeout"
+        check.error_code = check.error_code or "aml_pending_timeout"
+        check.error_message = check.error_message or "AML provider result timed out"
     elif check.error_code == "missing_risk_score":
         check.status = AmlStatus.MANUAL_REVIEW
         check.deposit_decision = DepositDecision.MANUAL_REVIEW
@@ -226,6 +228,7 @@ def decision_from_provider_result(tx, result):
         check.status = AmlStatus.MANUAL_REVIEW
         check.deposit_decision = DepositDecision.MANUAL_REVIEW
         check.decision_reason = "aml_provider_error"
+        check.error_code = check.error_code or "aml_provider_error"
     elif provider_status in ("pending", "checking") or status in (
         "pending",
         "checking",
@@ -236,6 +239,7 @@ def decision_from_provider_result(tx, result):
         check.status = AmlStatus.MANUAL_REVIEW
         check.deposit_decision = DepositDecision.MANUAL_REVIEW
         check.decision_reason = "incomplete_aml_result"
+        check.error_code = check.error_code or "incomplete_aml_result"
     elif _has_alerts(signals):
         check.status = AmlStatus.MANUAL_REVIEW
         check.deposit_decision = DepositDecision.MANUAL_REVIEW

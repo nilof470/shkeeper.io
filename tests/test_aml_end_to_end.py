@@ -153,7 +153,10 @@ class AmlEndToEndTestCase(unittest.TestCase):
         self.assertTrue(callback_module.send_notification(tx))
 
         self.assertTrue(tx.callback_confirmed)
-        self.assertEqual(captured["transactions"][0]["deposit_decision"], "credit")
+        self.assertNotIn("deposit_decision", captured["transactions"][0])
+        self.assertNotIn("decision_reason", captured["transactions"][0])
+        self.assertEqual(captured["transactions"][0]["aml"]["checked"], True)
+        self.assertEqual(captured["transactions"][0]["aml"]["score"], "0.04")
 
     def test_score_above_threshold_manual_review(self):
         tx = self.make_tx("150")
@@ -198,12 +201,12 @@ class AmlEndToEndTestCase(unittest.TestCase):
 
         self.assertEqual(len(calls), 1)
 
-    def test_unsupported_crypto_resolves_manual_review_with_unsupported_asset(self):
+    def test_unsupported_crypto_bypasses_aml_and_allows_callback(self):
         tx = self.make_tx("150", crypto="BNB")
         check = aml_processing.ensure_aml_for_transaction(tx)
 
-        self.assertEqual(check.deposit_decision, DepositDecision.MANUAL_REVIEW)
-        self.assertEqual(check.decision_reason, "unsupported_asset")
+        self.assertIsNone(check)
+        self.assertTrue(aml_processing.is_callback_allowed(tx))
 
     def test_replayed_walletnotify_reuses_aml_check(self):
         tx = self.make_tx("50", txid="same-tx")
