@@ -33,9 +33,17 @@ cd /Users/test/PycharmProjects/tron-shkeeper
 git checkout master
 git pull origin master
 git status --short --branch
+git add REPLACE_WITH_CHANGED_FILES
+git commit -m "REPLACE_WITH_RELEASE_COMMIT_MESSAGE"
+git push origin "$(git branch --show-current)"
 TAG=$(git rev-parse --short HEAD)
 echo "$TAG"
 ```
+
+Do not build a release image from a dirty working tree. The Docker tag is the
+current commit short SHA, so commit and push the code first, then build the
+image with that new tag. Reusing an existing tag can leave k3s running a cached
+old image when `imagePullPolicy` is `IfNotPresent`.
 
 Run tests before building:
 
