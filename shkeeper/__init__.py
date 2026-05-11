@@ -143,6 +143,10 @@ def create_app(test_config=None):
 
     Session(app)
 
+    @app.get("/healthz")
+    def healthz():
+        return {"status": "ok"}
+
     scheduler.init_app(app)
 
     if app.debug or app.config.get("DEV_MODE"):
