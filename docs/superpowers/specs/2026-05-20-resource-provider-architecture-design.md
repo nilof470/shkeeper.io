@@ -44,7 +44,7 @@ code does not need backward compatibility with the current unshipped config.
 Replace the current resource source settings with explicit provider settings:
 
 ```python
-ENERGY_PROVIDER: Literal["staking", "refee", "profeex"] = "staking"
+ENERGY_PROVIDER: Literal["staking", "refee"] = "staking"
 BANDWIDTH_PROVIDER: Literal["disabled", "refee", "profeex"] = "disabled"
 REFEE: Json[RefeeConfig] | None = None
 PROFEEX: Json[ProfeeXConfig] | None = None
@@ -62,10 +62,9 @@ PROFEEX: Json[ProfeeXConfig] | None = None
   insufficient.
 
 `ENERGY_SOURCE` is replaced by `ENERGY_PROVIDER`. `staking` continues to use
-the existing local delegation path, while `refee` uses re:Fee. `profeex` is
-reserved by the config and factory for the future ProfeeX energy integration,
-but implementation may initially reject it until the energy provider class is
-added.
+the existing local delegation path, while `refee` uses re:Fee. ProfeeX energy
+is a future extension and is not accepted by `ENERGY_PROVIDER` until energy
+rental is implemented for that service.
 
 `ProfeeXConfig`:
 
@@ -77,17 +76,13 @@ class ProfeeXConfig(BaseModel):
     bandwidth_duration_label: Literal["1h", "1d", "3d", "7d", "14d"] = "1h"
     min_bandwidth_order_amount: int = 350
     max_bandwidth_order_amount: int = 10_000
-    energy_duration_label: Literal["1h", "1d", "3d", "7d", "14d"] = "1h"
-    min_energy_order_amount: int = 64_285
-    max_energy_order_amount: int = 3_000_000
     poll_interval_sec: float = 2.0
     timeout_sec: int = 60
 ```
 
 Validation rules:
 
-- `PROFEEX` is required when `BANDWIDTH_PROVIDER == "profeex"` or
-  `ENERGY_PROVIDER == "profeex"`.
+- `PROFEEX` is required when `BANDWIDTH_PROVIDER == "profeex"`.
 - `REFEE` is required when `BANDWIDTH_PROVIDER == "refee"` or
   `ENERGY_PROVIDER == "refee"`.
 - ProfeeX base URL must be HTTPS.
@@ -128,10 +123,13 @@ Concrete providers:
 
 - `StakingEnergyProvider`: supports energy only and keeps the current local
   delegation and undelegation behavior.
-- `RefeeProvider` or split `RefeeEnergyProvider` plus `RefeeBandwidthProvider`:
-  supports re:Fee energy and bandwidth using existing re:Fee API behavior.
+- `RefeeProvider`: supports re:Fee energy and bandwidth using existing re:Fee
+  API behavior. The factories may return the same provider instance through
+  either capability interface.
 - `ProfeeXBandwidthProvider`: supports ProfeeX ordinary bandwidth delegation.
-- `ProfeeXEnergyProvider`: future class for ProfeeX energy delegation.
+- `ProfeeXEnergyProvider`: future class for ProfeeX energy delegation. It is
+  added together with `ENERGY_PROVIDER="profeex"` when ProfeeX energy rental is
+  implemented.
 
 The implementation can keep files small by moving provider code into a package:
 
@@ -157,8 +155,7 @@ handling changes to:
 1. Determine whether the sweep uses an energy provider:
    - `ENERGY_PROVIDER == "staking"` uses local delegation when
      `ENERGY_DELEGATION_MODE` is enabled.
-   - `ENERGY_PROVIDER in {"refee", "profeex"}` uses the configured external
-     provider.
+   - `ENERGY_PROVIDER == "refee"` uses the configured external provider.
 2. Before estimating or buying energy, call an `ensure_onetime_bandwidth`
    helper with `BANDWIDTH_PER_TRC20_TRANSFER_CALL`.
 3. `ensure_onetime_bandwidth` first checks `has_free_bw`.
