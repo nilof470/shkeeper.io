@@ -1,4 +1,4 @@
-# Payout HMAC Auth And TRON USDT Fee-Deposit Resource Provisioning
+# TRON USDT Fee-Deposit Payout Resource Provisioning
 
 Date: 2026-05-29
 Status: Revised design, pending implementation plan
@@ -15,22 +15,14 @@ Source docs and code:
 - `shkeeper/api_v1.py`
 - `shkeeper/auth.py`
 - `shkeeper/services/payout_service.py`
-- `shkeeper/services/webhook_hmac.py`
 - `shkeeper/modules/classes/tron_token.py`
 - `shkeeper/templates/wallet/payout_tron.j2`
 
 ## Context
 
-This design covers two related changes.
-
-First, Grither Pay needs a server-to-server way to call the existing SHKeeper
-single payout endpoint for client withdrawals. This auth path should work for
-all enabled SHKeeper payout coins and networks, not only for TRON USDT. Admin
-UI payouts keep using the current browser/session/basic-auth behavior.
-
-Second, TRON TRC-20 sweep already provisions energy and bandwidth before moving
-funds from client onetime wallets to the main wallet. The USDT TRC-20 single
-payout path does not use this resource-provider flow. It sends USDT from the
+TRON TRC-20 sweep already provisions energy and bandwidth before moving funds
+from client onetime wallets to the main wallet. The USDT TRC-20 single payout
+path does not use this resource-provider flow. It sends USDT from the
 `fee_deposit` wallet and currently depends on a static `TX_FEE` estimate and
 the wallet's TRX balance.
 
@@ -44,13 +36,16 @@ for wallet ledger behavior: balance holds, preventing double withdrawals,
 terminal failure handling, and deciding when a user may submit a new withdrawal.
 SHKeeper remains the payout executor.
 
+Grither Pay will call the existing SHKeeper single payout endpoint for client
+withdrawals. In this phase, SHKeeper keeps the current payout endpoint and auth
+model unchanged: admin browser session and existing Basic Auth remain available.
+HMAC server-to-server auth is intentionally out of scope for this iteration.
+
 ## Goals
 
 - Add resource provisioning to USDT TRC-20 single payout from `fee_deposit`.
 - Cover both admin manual USDT TRC-20 payout and client USDT TRC-20 withdrawal
   payout, because both map to a single payout from the same fee wallet.
-- Add HMAC server-to-server auth for Grither Pay on the existing single payout
-  endpoint for every enabled SHKeeper payout coin and network.
 - Show an admin estimate based on ProfeeX pricing instead of only static TRX
   burn cost.
 - Block payout submission when resource estimation cannot be completed or the
@@ -58,20 +53,20 @@ SHKeeper remains the payout executor.
 - Never broadcast the USDT transaction until resources are confirmed active on
   chain.
 - Keep the existing `/api/v1/<crypto_name>/payout` endpoint for both admin
-  manual payouts and Grither Pay server-to-server payouts.
-- Add a safe server-to-server auth path for Grither Pay without requiring an
-  application-level IP allowlist, because the admin UI must remain publicly
-  reachable.
+  manual payouts and Grither Pay payouts.
+- Keep the existing payout auth behavior in this phase: browser session for
+  admin UI and Basic Auth for API callers.
 - Keep the change additive and narrow because this codebase is a fork.
 
 ## Non-goals
 
 - No multipayout changes in this phase.
 - No resource-provisioning changes for native TRX, TON, EVM, BTC-like, or
-  other non-TRON-USDT payout paths in this phase. Those routes may still use the
-  new HMAC auth path.
-- No new coin/network support in this phase. HMAC applies only to payout routes
-  that are already enabled in SHKeeper.
+  other non-TRON-USDT payout paths in this phase.
+- No new coin/network support in this phase.
+- No HMAC server-to-server auth in this phase.
+- No Basic Auth disabling or 2FA enforcement changes for API calls in this
+  phase. This is accepted as a temporary compatibility tradeoff.
 - No buffer strategy that intentionally rents resources for five future
   payouts.
 - No ProfeeX webhook integration in this phase.
@@ -83,8 +78,8 @@ SHKeeper remains the payout executor.
   Grither Pay can release/restore state and let the user initiate another
   withdrawal.
 - No application-level IP allowlist in this phase. Network restrictions may be
-  applied at Yandex Cloud/security-group/ingress level, but they are not the
-  main safety control for this endpoint.
+  applied at Yandex Cloud/security-group/ingress level as defense in depth, but
+  they are not required for this implementation scope.
 
 ## Selected Strategy
 
@@ -217,7 +212,7 @@ The implementation should classify `error_code` so the task result can expose a
 clear controlled failure reason. In this phase, classification is for reporting
 and operational handling, not for automatic retry.
 
-## Server-To-Server Payout API Security
+## Payout API Auth Scope
 
 Use the existing SHKeeper payout endpoint for Grither Pay:
 
@@ -225,48 +220,15 @@ Use the existing SHKeeper payout endpoint for Grither Pay:
 POST /api/v1/<crypto_name>/payout
 ```
 
-Admin UI behavior remains compatible with the current session/basic-auth path.
-Grither Pay uses an additional server-to-server HMAC auth path on the same
-endpoint. The HMAC path must not be required for browser/admin requests.
-The HMAC path is allowed for every enabled `crypto_name` that the existing
-endpoint can already pay out. It is not restricted to USDT or TRON. Per-network
-resource provisioning remains conditional: only the USDT TRC-20 path gets
-ProfeeX energy/bandwidth preparation.
+Do not introduce a new payout endpoint and do not change the auth decorators in
+this phase. Admin UI behavior remains compatible with the current browser
+session path. Grither Pay will use the existing Basic Auth path for
+server-to-server calls.
 
-Grither Pay request headers:
-
-```text
-X-Shkeeper-Timestamp: <unix timestamp>
-X-Shkeeper-Signature: <hex hmac sha256>
-```
-
-Signing algorithm:
-
-```text
-canonical = "{timestamp}.{METHOD}.{path_with_query}." + raw_request_body
-signature = HMAC_SHA256(secret, canonical)
-```
-
-`METHOD` is upper-case, for example `POST`. `path_with_query` is the exact
-request path seen by SHKeeper, for example `/api/v1/USDT/payout`. If a query
-string exists, include it exactly as received after `?`; otherwise sign only the
-path. Including the method and path binds a signed request to the target
-coin/network endpoint and prevents replaying the same signed body against a
-different `<crypto_name>`.
-
-The existing outbound webhook HMAC helper in `shkeeper/services/webhook_hmac.py`
-can be reused for timestamp parsing, constant-time comparison, and digest
-formatting, but the inbound payout canonical string intentionally includes
-method and path.
-
-Recommended secret:
-
-- Use a dedicated environment secret for Grither Pay payout requests, for
-  example `GRITHER_PAY_PAYOUT_HMAC_SECRET`.
-- Do not rely on IP allowlist as the main auth control, because the public
-  admin UI must remain open from any IP.
-- Do not require HMAC for admin UI requests. The existing login/basic auth
-  behavior should keep working.
+This means 2FA protects browser login sessions, but it does not protect Basic
+Auth API calls. That risk is accepted temporarily to keep the fork changes
+small. Future hardening can replace Basic Auth for server-to-server payouts with
+HMAC or another scoped machine credential.
 
 Grither Pay payload:
 
@@ -279,12 +241,13 @@ Grither Pay payload:
 }
 ```
 
-For HMAC-authenticated payout requests:
+For Grither Pay payout requests:
 
 - `external_id` is required.
-- HMAC auth does not change the per-crypto payout schema. If a route requires
+- The existing per-crypto payout schema remains unchanged. If a route requires
   `fee` today, it remains required. For TRON USDT, `fee` may be optional or
-  ignored and must not be trusted as the source of truth for resource readiness.
+  ignored by the resource-provisioning path and must not be trusted as the
+  source of truth for resource readiness.
 - SHKeeper should reject duplicate `external_id` defensively and must not create
   a second payout for the same `external_id`.
 - Grither Pay remains responsible for deciding whether a failed withdrawal can
@@ -328,9 +291,7 @@ Admin and API payout submission should be rejected before enqueue when:
 
 - destination address is invalid;
 - amount is invalid or exceeds token balance;
-- HMAC-authenticated Grither Pay request is missing `external_id`;
-- HMAC-authenticated Grither Pay request has an invalid timestamp, method/path
-  binding, or signature;
+- Grither Pay request is missing `external_id`;
 - non-empty `external_id` already exists for this crypto;
 - resource estimation fails for a payout route that requires resource preflight;
 - ProfeeX configuration is missing for a payout that requires external
@@ -391,14 +352,12 @@ In `shkeeper.io`:
   or not submit-ready.
 - Backend API payout should repeat validation/preflight instead of relying only
   on frontend state.
-- The existing payout endpoint should accept Grither Pay HMAC-authenticated
-  server-to-server requests in addition to current admin/session/basic-auth
-  requests.
-- HMAC-authenticated requests should require `external_id` and must never create
-  a duplicate payout for the same `crypto + external_id`.
+- The existing payout endpoint should keep accepting current admin
+  session/basic-auth requests.
+- Grither Pay requests should require `external_id` and must never create a
+  duplicate payout for the same `crypto + external_id`.
 - Existing non-TRON or non-USDT payout execution behavior should remain
-  unchanged except that those routes may also be called through valid HMAC
-  server-to-server auth.
+  unchanged.
 
 ## Failure Behavior
 
@@ -433,13 +392,9 @@ Main app tests:
 
 - TRON USDT estimate proxies structured quote fields;
 - admin/API payout rejects submission when quote/preflight is not ready;
-- existing admin payout request still works without HMAC;
-- HMAC-authenticated payout accepts a valid signature over timestamp, method,
-  path, and raw body bytes;
-- HMAC-authenticated payout rejects missing, expired, or invalid signatures;
-- HMAC-authenticated payout rejects a signature replayed against a different
-  `<crypto_name>` path;
-- HMAC-authenticated payout requires `external_id`;
+- existing admin payout request still works through browser session auth;
+- existing Basic Auth payout still works for API callers;
+- Grither Pay payout path requires `external_id`;
 - duplicate `external_id` does not create a second payout;
 - payout record is created before sidecar enqueue and updated with `task_id`;
 - old `fee` behavior remains compatible where non-USDT templates expect it;
@@ -458,11 +413,9 @@ Integration or smoke tests:
   safely.
 - Deploy the dedicated payout queue worker with one worker slot before enabling
   the feature.
-- Configure `GRITHER_PAY_PAYOUT_HMAC_SECRET` before enabling Grither Pay payout
-  calls for any coin/network.
 - Prefer routing Grither Pay to SHKeeper over the private Yandex Cloud network
-  when possible. This is defense in depth; HMAC remains required because the
-  admin UI and public HTTPS endpoint stay reachable from any IP.
+  when possible. This is defense in depth while Grither Pay uses Basic Auth and
+  the public HTTPS endpoint stays reachable from any IP.
 - Keep the old static fee path available for non-USDT and disabled-feature
   cases.
 - Add operational metrics for provider order count, provider failures,
