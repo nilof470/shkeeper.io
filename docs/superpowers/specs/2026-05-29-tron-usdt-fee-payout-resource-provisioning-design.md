@@ -12,6 +12,10 @@ Source docs and code:
 - `../tron-shkeeper/app/tasks.py`
 - `../tron-shkeeper/app/wallet.py`
 - `../tron-shkeeper/app/resource_providers/profeex.py`
+- `shkeeper/api_v1.py`
+- `shkeeper/auth.py`
+- `shkeeper/services/payout_service.py`
+- `shkeeper/services/webhook_hmac.py`
 - `shkeeper/modules/classes/tron_token.py`
 - `shkeeper/templates/wallet/payout_tron.j2`
 
@@ -27,6 +31,11 @@ send USDT TRC-20 from `fee_deposit` without burning TRX for normal transaction
 fees. Energy and bandwidth should be rented from ProfeeX when the wallet does
 not already have enough resources.
 
+Client withdrawals will be initiated by Grither Pay. Grither Pay is responsible
+for wallet ledger behavior: balance holds, preventing double withdrawals,
+terminal failure handling, and deciding when a user may submit a new withdrawal.
+SHKeeper remains the payout executor.
+
 ## Goals
 
 - Add resource provisioning to USDT TRC-20 single payout from `fee_deposit`.
@@ -38,6 +47,11 @@ not already have enough resources.
   system already knows provisioning cannot be attempted.
 - Never broadcast the USDT transaction until resources are confirmed active on
   chain.
+- Keep the existing `/api/v1/<crypto_name>/payout` endpoint for both admin
+  manual payouts and Grither Pay server-to-server payouts.
+- Add a safe server-to-server auth path for Grither Pay without requiring an
+  application-level IP allowlist, because the admin UI must remain publicly
+  reachable.
 - Keep the change additive and narrow because this codebase is a fork.
 
 ## Non-goals
@@ -49,6 +63,15 @@ not already have enough resources.
   payouts.
 - No ProfeeX webhook integration in this phase.
 - No broad refactor of wallet signing or transaction broadcast code.
+- No SHKeeper-side wallet ledger, balance reservation, or double-withdrawal
+  state machine for Grither Pay withdrawals.
+- No automatic SHKeeper retry loop for failed ProfeeX provisioning in this
+  phase. Temporary provider failures should fail the payout attempt cleanly so
+  Grither Pay can release/restore state and let the user initiate another
+  withdrawal.
+- No application-level IP allowlist in this phase. Network restrictions may be
+  applied at Yandex Cloud/security-group/ingress level, but they are not the
+  main safety control for this endpoint.
 
 ## Selected Strategy
 
@@ -66,6 +89,11 @@ This is not a resource buffer strategy. The implementation does not buy
 resources in advance for a planned batch of future payouts. It also does not
 create a ProfeeX order when previous delegation, manual delegation, or recovered
 resources already make `fee_deposit` ready for the current payout.
+
+For Grither Pay, one withdrawal attempt maps to one SHKeeper payout attempt.
+If SHKeeper fails before broadcast because resources or ProfeeX are not ready,
+the failure is terminal for that SHKeeper attempt. Grither Pay may allow the
+user to create a new withdrawal attempt after it restores its own wallet state.
 
 ## Resource Sizing
 
@@ -143,21 +171,21 @@ Status rules:
 - `QUEUED`, `PENDING`, `PROCESSING`: keep polling until timeout.
 - `ACTIVE`: treat provider order as successful, then perform an on-chain
   resource recheck.
-- `FAILED` with retryable `error_code`: do not broadcast; retry provisioning
-  with Celery backoff.
-- `FAILED` with non-retryable `error_code`: fail the payout task with a
-  controlled error.
+- `FAILED` with temporary `error_code`: do not broadcast; fail the payout task
+  with a controlled provider error.
+- `FAILED` with non-temporary `error_code`: fail the payout task with a
+  controlled provider error.
 - `CANCELLED`, `COMPLETED`, `unknown`: fail the provider attempt and do not
   broadcast.
 
-Retryable `error_code` values:
+Temporary provider `error_code` values:
 
 - `DUPLICATE_REQUEST`
 - `RATE_LIMIT_EXCEEDED`
 - `SERVICE_UNAVAILABLE`
 - `REQUEST_TIMEOUT`
 
-Non-retryable or operational-failure `error_code` values:
+Non-temporary or operational-failure `error_code` values:
 
 - `INVALID_ADDRESS`
 - `INVALID_PARAMETERS`
@@ -168,13 +196,72 @@ Non-retryable or operational-failure `error_code` values:
 
 `INSUFFICIENT_BALANCE` is marked retryable in ProfeeX docs, but for this
 system it should fail the payout attempt with an operational alert by default.
-The provider account balance usually needs external action, and holding the
-single payout queue open on repeated retries would block unrelated customer
-withdrawals.
+The provider account balance usually needs external action.
 
 The current ProfeeX provider returns generic failure for all `FAILED` statuses.
-The implementation should classify `error_code` so Celery can distinguish
-temporary provider failures from permanent validation/configuration failures.
+The implementation should classify `error_code` so the task result can expose a
+clear controlled failure reason. In this phase, classification is for reporting
+and operational handling, not for automatic retry.
+
+## Grither Pay API Security
+
+Use the existing SHKeeper payout endpoint for Grither Pay:
+
+```text
+POST /api/v1/<crypto_name>/payout
+```
+
+Admin UI behavior remains compatible with the current session/basic-auth path.
+Grither Pay uses an additional server-to-server HMAC auth path on the same
+endpoint. The HMAC path must not be required for browser/admin requests.
+
+Grither Pay request headers:
+
+```text
+X-Shkeeper-Timestamp: <unix timestamp>
+X-Shkeeper-Signature: <hex hmac sha256>
+```
+
+Signing algorithm:
+
+```text
+HMAC_SHA256(secret, "{timestamp}." + raw_request_body)
+```
+
+This matches the existing outbound webhook HMAC helper in
+`shkeeper/services/webhook_hmac.py`. The implementation should reuse that
+verification logic for inbound payout requests instead of inventing a second
+signature scheme.
+
+Recommended secret:
+
+- Use a dedicated environment secret for Grither Pay payout requests, for
+  example `GRITHER_PAY_PAYOUT_HMAC_SECRET`.
+- Do not rely on IP allowlist as the main auth control, because the public
+  admin UI must remain open from any IP.
+- Do not require HMAC for admin UI requests. The existing login/basic auth
+  behavior should keep working.
+
+Grither Pay payload:
+
+```json
+{
+  "external_id": "grither_withdrawal_123",
+  "destination": "T...",
+  "amount": "100.25",
+  "callback_url": "https://grither-pay.example/shkeeper/payout-callback"
+}
+```
+
+For HMAC-authenticated payout requests:
+
+- `external_id` is required.
+- `fee` is optional and must not be trusted as the source of truth for TRON USDT
+  resource readiness.
+- SHKeeper should reject duplicate `external_id` defensively and must not create
+  a second payout for the same `external_id`.
+- Grither Pay remains responsible for deciding whether a failed withdrawal can
+  be retried by the user under a new attempt.
 
 ## API And Admin Estimate
 
@@ -214,6 +301,9 @@ Admin and API payout submission should be rejected before enqueue when:
 
 - destination address is invalid;
 - amount is invalid or exceeds token balance;
+- HMAC-authenticated Grither Pay request is missing `external_id`;
+- HMAC-authenticated Grither Pay request has an invalid timestamp or signature;
+- non-empty `external_id` already exists for this crypto;
 - resource estimation fails;
 - ProfeeX configuration is missing for a payout that requires external
   provisioning;
@@ -223,6 +313,11 @@ Admin and API payout submission should be rejected before enqueue when:
 After enqueue, the task may still wait for ProfeeX and may still fail if the
 provider or chain state changes. In that case the task result should contain a
 controlled error message, and no transaction should be broadcast.
+
+To reduce the chance of a queued sidecar payout without a matching SHKeeper
+record, create the SHKeeper `Payout` record before calling the sidecar. Then
+store the returned `task_id`. If the sidecar rejects the request before enqueue,
+mark that payout as failed.
 
 ## Sidecar Architecture
 
@@ -268,18 +363,21 @@ In `shkeeper.io`:
   or not submit-ready.
 - Backend API payout should repeat validation/preflight instead of relying only
   on frontend state.
+- The existing payout endpoint should accept Grither Pay HMAC-authenticated
+  server-to-server requests in addition to current admin/session/basic-auth
+  requests.
+- HMAC-authenticated requests should require `external_id` and must never create
+  a duplicate payout for the same `crypto + external_id`.
 - Existing non-TRON or non-USDT payout behavior should remain unchanged.
 
 ## Failure Behavior
 
 - If resources are already sufficient, no ProfeeX order is created.
 - If ProfeeX order creation fails before `task_id`, fail without broadcast.
-- If polling times out before `ACTIVE`, retry according to Celery policy when
-  the error is temporary; otherwise fail without broadcast.
+- If polling times out before `ACTIVE`, fail without broadcast.
 - If `ACTIVE` is received but on-chain resources are still insufficient, wait
   for a short bounded recheck window. If resources are still insufficient,
-  treat the provider attempt as retryable with Celery backoff and do not
-  broadcast.
+  fail without broadcast.
 - If transaction broadcast fails after resources were confirmed, return the
   existing payout failure path with the broadcast error.
 - Logs must include resource deficits, ProfeeX `task_id`, status, `error_code`,
@@ -293,9 +391,11 @@ Sidecar unit tests:
 - helper creates energy order only when energy is deficient;
 - helper creates bandwidth order only when bandwidth is deficient;
 - helper waits for `ACTIVE` and then rechecks chain resources;
-- helper does not broadcast when ProfeeX returns retryable failure;
-- helper classifies `DUPLICATE_REQUEST` and `RATE_LIMIT_EXCEEDED` as retryable;
-- helper classifies validation/configuration errors as non-retryable;
+- helper does not broadcast when ProfeeX returns temporary failure;
+- helper classifies `DUPLICATE_REQUEST` and `RATE_LIMIT_EXCEEDED` as temporary
+  provider failures;
+- helper classifies validation/configuration errors as permanent or operational
+  failures;
 - single payout path calls resource helper before `Wallet.transfer()`;
 - multipayout path is unchanged.
 
@@ -303,6 +403,12 @@ Main app tests:
 
 - TRON USDT estimate proxies structured quote fields;
 - admin/API payout rejects submission when quote/preflight is not ready;
+- existing admin payout request still works without HMAC;
+- HMAC-authenticated payout accepts a valid signature over raw body bytes;
+- HMAC-authenticated payout rejects missing, expired, or invalid signatures;
+- HMAC-authenticated payout requires `external_id`;
+- duplicate `external_id` does not create a second payout;
+- payout record is created before sidecar enqueue and updated with `task_id`;
 - old `fee` behavior remains compatible where non-USDT templates expect it;
 - frontend blocks payout when latest quote is missing or stale.
 
@@ -310,8 +416,8 @@ Integration or smoke tests:
 
 - queue routing sends USDT single payouts to the dedicated queue;
 - two rapid payouts process sequentially and recompute resources between runs;
-- retryable ProfeeX failure leaves the payout unbroadcast and retries with
-  backoff.
+- temporary ProfeeX failure leaves the payout unbroadcast and marks the payout
+  attempt failed without automatic retry.
 
 ## Rollout Notes
 
@@ -319,8 +425,13 @@ Integration or smoke tests:
   safely.
 - Deploy the dedicated payout queue worker with one worker slot before enabling
   the feature.
+- Configure `GRITHER_PAY_PAYOUT_HMAC_SECRET` before enabling Grither Pay payout
+  calls.
+- Prefer routing Grither Pay to SHKeeper over the private Yandex Cloud network
+  when possible. This is defense in depth; HMAC remains required because the
+  admin UI and public HTTPS endpoint stay reachable from any IP.
 - Keep the old static fee path available for non-USDT and disabled-feature
   cases.
-- Add operational metrics for provider order count, retryable failures,
+- Add operational metrics for provider order count, provider failures,
   `DUPLICATE_REQUEST`, `RATE_LIMIT_EXCEEDED`, successful no-order payouts, and
   queue wait time.
