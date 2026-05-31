@@ -1,0 +1,2390 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SHKeeper API - Grither Pay fork",
+    "description": "# Introduction\nSHKeeper - is an open-source, self-hosted cryptocurrency payment processor. It uniquely serves as both a gateway and a merchant, enabling you to accept payments in various cryptocurrencies without fees and intermediaries.\n\n# Authentication\nYou can authenticate either via Basic Auth or an API key depending from endpoint requirement. You can generate or view an API key in the SHKeeper UI under `Wallets` -> `Manage` -> `API key`, the API key is the same for each wallet. Basic HTTP credentials it's your SHKeeper UI user and password. For metrics endpoints using separate user and password specified in `METRICS_USERNAME`, `METRICS_PASSWORD` environment variables, with default values `shkeeper`,`shkeeper`.  You can see the required authentication on the API docs at the top of each endpoint under `AUTHORIZATIONS`.\n\n<!-- Redoc-Inject: <security-definitions> -->\n\n# Grither Pay fork notes\nThis fork keeps SHKeeper as a payment fact source. Current `build_payment_notification()` output includes invoice and transaction facts plus optional AML enrichment facts. Business decisions such as credit, manual review, reject, or hold are made by Grither Pay, not by SHKeeper.\n\nIn current callback transaction objects, use `aml.checked`, `aml.supported`, `aml.check_status`, `aml.reason_code`, `aml.score`, `aml.signals`, and `aml.policy` as inputs for Grither Pay decisioning. `aml.provider_status` is the raw AML provider or sidecar status and can differ from normalized `aml.check_status`.",
+    "version": "2.1.47-grither-pay",
+    "contact": {
+      "email": "support@shkeeper.io",
+      "url": "https://shkeeper.io"
+    },
+    "x-logo": {
+      "url": "https://shkeeper.io/images/shkeeper-logo.svg",
+      "altText": "SHKeeper logo"
+    },
+    "license": {
+      "name": "GPL-3.0",
+      "url": "https://github.com/vsys-host/shkeeper.io?tab=GPL-3.0-1-ov-file#readme"
+    },
+    "x-fork": {
+      "name": "grither-pay-shkeeper",
+      "callback_contract": "payment_facts_plus_aml_enrichment",
+      "business_decisions": "externalized_to_grither_pay"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://demo.shkeeper.io"
+    }
+  ],
+  "security": [
+    {
+      "API_Key": []
+    },
+    {
+      "Basic": []
+    }
+  ],
+  "paths": {
+    "/api/v1/crypto": {
+      "get": {
+        "summary": "Get cryptocurrencies",
+        "description": "Get a list of cryptocurrencies available for operation from SHKeeper (these are the ones that are online and not disabled in the admin panel).",
+        "security": [],
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "label": "CLI",
+            "source": "curl --location --request GET 'https://demo.shkeeper.io/api/v1/crypto'\n"
+          }
+        ],
+        "operationId": "getCrypto",
+        "tags": [
+          "Cryptos"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetCryptoResponse"
+                },
+                "examples": {
+                  "default": {
+                    "summary": "Get Available Crypto Currencies",
+                    "value": {
+                      "crypto": [
+                        "BNB",
+                        "BNB-USDT",
+                        "ETH-USDT",
+                        "BTC",
+                        "ETH",
+                        "BNB-USDC",
+                        "ETH-USDC"
+                      ],
+                      "crypto_list": [
+                        {
+                          "display_name": "BNB",
+                          "name": "BNB"
+                        },
+                        {
+                          "display_name": "BEP20 USDT",
+                          "name": "BNB-USDT"
+                        },
+                        {
+                          "display_name": "ERC20 USDT",
+                          "name": "ETH-USDT"
+                        },
+                        {
+                          "display_name": "Bitcoin",
+                          "name": "BTC"
+                        },
+                        {
+                          "display_name": "Ethereum",
+                          "name": "ETH"
+                        },
+                        {
+                          "display_name": "BEP20 USDC",
+                          "name": "BNB-USDC"
+                        },
+                        {
+                          "display_name": "ERC20 USDC",
+                          "name": "ETH-USDC"
+                        }
+                      ],
+                      "status": "success"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/v1/{crypto_name}/payment_request": {
+      "post": {
+        "security": [
+          {
+            "API_Key": []
+          }
+        ],
+        "operationId": "CreatePaymentRequest",
+        "summary": "Create/Update SHKeeper invoice",
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "label": "CLI",
+            "source": "curl --location --request POST 'https://demo.shkeeper.io/api/v1/ETH-USDC/payment_request' \\\n--header 'X-Shkeeper-Api-Key: fs9GYTyNdkjPHX36' \\\n--header 'Content-Type: application/json' \\\n--data-raw '{\"external_id\":107,\"fiat\":\"USD\",\"amount\":\"18.25\",\"callback_url\":\"http://localhost/?wc-api=shkeeper-callback\"}'\n"
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CryptoName"
+          }
+        ],
+        "tags": [
+          "Invoices"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePaymentRequest"
+              },
+              "examples": {
+                "default_example": {
+                  "$ref": "#/components/examples/CreatePaymentRequestExample"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatePaymentRequestResponse"
+                },
+                "examples": {
+                  "default_example": {
+                    "$ref": "#/components/examples/CreatePaymentRequestResponseExample"
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Method Not Allowed"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Error mesage about the error"
+                    },
+                    "status": {
+                      "type": "string",
+                      "description": "error"
+                    },
+                    "traceback": {
+                      "type": "string",
+                      "description": "Error Traceback"
+                    }
+                  }
+                },
+                "examples": {
+                  "default_example": {
+                    "summary": "Get Available Crypto Currencies",
+                    "value": {
+                      "message": "external_id",
+                      "status": "error",
+                      "traceback": "Traceback (most recent call last):\n  File \"/shkeeper.io/shkeeper/api_v1.py\", line 71, in payment_request\n    invoice = Invoice.add(crypto=crypto, request=req)\n  File \"/shkeeper.io/shkeeper/models.py\", line 219, in add\n    invoice = cls.query.filter_by(external_id=request['external_id'],\nKeyError: 'external_id'\n"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "callbacks": {
+          "onPayment": {
+            "{$request.callback_url}": {
+              "post": {
+                "description": "The callback is sent to the specified `callback_url` provided during invoice creation. SHKeeper can send an unconfirmed transaction callback first, and later sends a confirmed payment callback after the transaction reaches the required confirmation state. For confirmed payment callbacks, SHKeeper sends a notification for each transaction related to the invoice, even if the invoice is already in `PAID`/`OVERPAID` status. The transaction that triggered the confirmed callback is marked with `trigger=true`.\n\nCurrent Grither Pay fork callbacks contain payment facts and optional AML enrichment facts only. Grither Pay should decide credit/manual review/reject using its own policy and the `aml` object on the trigger transaction. Use normalized `aml.checked`, `aml.supported`, `aml.check_status`, and `aml.reason_code` for decisioning; treat `aml.provider_status` as raw provider state. Unconfirmed callbacks never include AML enrichment and should not be used as a final credit decision.",
+                "operationId": "CallbackInvoicePayment",
+                "summary": "Received payment transaction",
+                "parameters": [
+                  {
+                    "in": "header",
+                    "name": "X-Shkeeper-Api-Key",
+                    "required": true,
+                    "description": "HTTP header to authenticate and validate by your system.",
+                    "schema": {
+                      "type": "string",
+                      "example": "fs9GYTyNdkjPHX36"
+                    }
+                  }
+                ],
+                "requestBody": {
+                  "required": true,
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "oneOf": [
+                          {
+                            "$ref": "#/components/schemas/CallbackPaymentRequest"
+                          },
+                          {
+                            "$ref": "#/components/schemas/UnconfirmedCallbackPaymentRequest"
+                          }
+                        ]
+                      },
+                      "examples": {
+                        "aml_checked": {
+                          "$ref": "#/components/examples/CallbackPaymentRequestAmlCheckedExample"
+                        },
+                        "aml_unsupported": {
+                          "$ref": "#/components/examples/CallbackPaymentRequestAmlUnsupportedExample"
+                        },
+                        "aml_skipped": {
+                          "$ref": "#/components/examples/CallbackPaymentRequestAmlSkippedExample"
+                        },
+                        "unconfirmed": {
+                          "$ref": "#/components/examples/UnconfirmedCallbackPaymentRequestExample"
+                        }
+                      }
+                    }
+                  }
+                },
+                "responses": {
+                  "202": {
+                    "description": "If a payment notification is successfully processed by your server, it should return the HTTP code `202 Accepted`. Any other response or connection failure will cause SHKeeper to resend the payment notification every `60` seconds."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/invoices/{external_id}": {
+      "get": {
+        "summary": "Get SHKeeper invoice information",
+        "description": "Get detailed information about status of created invoice in SHKeeper by external_id",
+        "security": [
+          {
+            "API_Key": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ExternalId"
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "label": "CLI",
+            "source": "curl --location --request GET 'https://demo.shkeeper.io/api/v1/invoices/233822' \\\n--header 'X-Shkeeper-Api-Key: fs9GYTyNdkjPHX36'\n"
+          }
+        ],
+        "operationId": "getInvoiceByExternalId",
+        "tags": [
+          "Invoices"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetInvoiceByExternalIdResponse"
+                },
+                "examples": {
+                  "default_example": {
+                    "$ref": "#/components/examples/GetInvoiceByExternalIdResponseExample"
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Method Not Allowed"
+          }
+        }
+      }
+    },
+    "/api/v1/{crypto_name}/addresses": {
+      "get": {
+        "summary": "Get SHKeeper generated addresses",
+        "description": "Get all generated cryptocurrency addresses for specified cryptocurrency",
+        "security": [
+          {
+            "API_Key": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CryptoName"
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "label": "CLI",
+            "source": "curl --location --request GET 'https://demo.shkeeper.io/api/v1/ETH-USDC/addresses' \\\n--header 'X-Shkeeper-Api-Key: fs9GYTyNdkjPHX36'\n"
+          }
+        ],
+        "operationId": "getAddressesByCryptoName",
+        "tags": [
+          "Other"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetAddressesByCryptoNameResponse"
+                },
+                "examples": {
+                  "default_example": {
+                    "$ref": "#/components/examples/GetAddressesByCryptoNameExample"
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Method Not Allowed"
+          }
+        }
+      }
+    },
+    "/api/v1/transactions/{crypto_name}/{addr}": {
+      "get": {
+        "summary": "Get transaction for SHKeeper generated cryptocurrency address",
+        "description": "Get all transactions related to specified cryptocurrency address",
+        "security": [
+          {
+            "API_Key": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CryptoName"
+          },
+          {
+            "$ref": "#/components/parameters/CryptoAddr"
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "label": "CLI",
+            "source": "curl --location --request GET 'https://demo.shkeeper.io/api/v1/ETH-USDC/addresses' \\\n--header 'X-Shkeeper-Api-Key: fs9GYTyNdkjPHX36'\n"
+          }
+        ],
+        "operationId": "getTransactionsByCryptoNameAndAddr",
+        "tags": [
+          "Other"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetTransactionsByCryptoNameAndAddrResponse"
+                },
+                "examples": {
+                  "default_example": {
+                    "$ref": "#/components/examples/GetTransactionsByCryptoNameAndAddrResponseExample"
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Method Not Allowed"
+          }
+        }
+      }
+    },
+    "/api/v1/tx-info/{txid}/{external_id}": {
+      "get": {
+        "summary": "Get payment info",
+        "description": "Get payment info by transaction and external ID",
+        "security": [
+          {
+            "API_Key": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TransactionId"
+          },
+          {
+            "$ref": "#/components/parameters/ExternalId"
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "label": "CLI",
+            "source": "curl --location --request GET 'https://demo.shkeeper.io/api/v1/tx-info/0xdaae319a0bee00f362f40ae725932c25a9b33bd33f3346ec22464361a56fcd1d/233822' \\\n--header 'X-Shkeeper-Api-Key: fs9GYTyNdkjPHX36'\n"
+          }
+        ],
+        "operationId": "getTransactionInfoByTxidAndExternalId",
+        "tags": [
+          "Other"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetTransactionInfoByTxidAndExternalIdResponse"
+                },
+                "examples": {
+                  "default_example": {
+                    "$ref": "#/components/examples/GetTransactionInfoByTxidAndExternalIdResponseExample"
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Method Not Allowed"
+          }
+        }
+      }
+    },
+    "/api/v1/decryption-key": {
+      "post": {
+        "security": [
+          {
+            "API_Key": []
+          }
+        ],
+        "operationId": "DecryptWallet",
+        "summary": "Decrypt Wallets",
+        "tags": [
+          "Encryption"
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "label": "CLI",
+            "source": "curl --location --request POST 'https://demo.shkeeper.io/api/v1/decryption-key' \\\n--header 'X-Shkeeper-Api-Key: fs9GYTyNdkjPHX36' \\\n--form 'key=\"asdfasfasgasgasgasgdeagweg\"'\n"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "description": "Decrypt wallets",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "description": "Decryption key that was set on the first run of SHKeeper on demand"
+                  }
+                },
+                "required": [
+                  "key"
+                ]
+              },
+              "examples": {
+                "default_example": {
+                  "summary": "Decrypt Wallets",
+                  "value": {
+                    "key": "sikfl5llLFt5is50dsfk4yvldti0034jfmmeJm"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Status of decriptions",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "description": "Decrypt wallets status"
+                    }
+                  }
+                },
+                "examples": {
+                  "success_decrypt": {
+                    "summary": "Decrypt Wallets",
+                    "value": {
+                      "status": "success"
+                    }
+                  },
+                  "already_decrypted": {
+                    "summary": "Wallets already decrypted",
+                    "value": {
+                      "status": "success",
+                      "message": "Decryption key was already entered"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Method Not Allowed"
+          },
+          "default": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Error message about the error"
+                    },
+                    "status": {
+                      "type": "string",
+                      "description": "error"
+                    }
+                  }
+                },
+                "examples": {
+                  "invalid_key": {
+                    "summary": "Invalid decryption key provided",
+                    "value": {
+                      "message": "Invalid decryption key",
+                      "status": "error"
+                    }
+                  },
+                  "key_missed": {
+                    "summary": "Decryption key not provided",
+                    "value": {
+                      "message": "Decryption key is required",
+                      "status": "error"
+                    }
+                  },
+                  "not_encrypted": {
+                    "summary": "Encrypt Faillure",
+                    "value": {
+                      "message": "Wallet is not encrypted",
+                      "status": "error"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "summary": "Get metrics",
+        "description": "Get SHKeeper metrics for wallets status",
+        "security": [
+          {
+            "Basic": []
+          }
+        ],
+        "operationId": "getMetrics",
+        "tags": [
+          "Metrics"
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "label": "CLI",
+            "source": "curl --location --request GET 'https://demo.shkeeper.io/metrics' \\\n--user shkeeper:shkeeper\n"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                },
+                "examples": {
+                  "default_example": {
+                    "$ref": "#/components/examples/GetMetricsExample"
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Method Not Allowed"
+          },
+          "500": {
+            "description": "Internal Serer Error"
+          }
+        }
+      }
+    },
+    "/api/v1/{crypto_name}/payout": {
+      "post": {
+        "security": [
+          {
+            "Basic": []
+          }
+        ],
+        "operationId": "CreatePayoutTask",
+        "summary": "Create payout task",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CryptoName"
+          }
+        ],
+        "tags": [
+          "Payouts"
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "label": "CLI",
+            "source": "curl --location --request POST 'https://demo.shkeeper.io/api/v1/ETH-USDC/payout' \\\n--user admin:admin \\\n--header 'Content-Type: application/json' \\\n--data-raw '{\"amount\":107,\"destination\":\"0xBD26e3512ce84F315e90E3FE75907bfbB5bD0c44\",\"fee\":\"10\"}'\n"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePayoutTaskRequest"
+              },
+              "examples": {
+                "default_example": {
+                  "$ref": "#/components/examples/CreatePayoutTaskRequestExample"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Create payout task",
+                  "properties": {
+                    "task_id": {
+                      "type": "string",
+                      "description": "Payout task ID"
+                    }
+                  }
+                },
+                "examples": {
+                  "success_task": {
+                    "summary": "Payout task",
+                    "value": {
+                      "task_id": "b2a01bb0-8abe-403b-a3fa-8124c84bcf23"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Method Not Allowed"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Error mesage about the error"
+                    },
+                    "status": {
+                      "type": "string",
+                      "description": "error"
+                    }
+                  }
+                },
+                "examples": {
+                  "missed_property": {
+                    "value": {
+                      "message": "Error: 'fee'",
+                      "status": "error"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{crypto_name}/multipayout": {
+      "post": {
+        "description": "Multipayout is not supported for the following cryptocurrencies: `XMR`, `BTC`, `LTC`, and `DOGE`. For these, you need to use the [Payout](#tag/Payouts/operation/CreatePayoutTask) method.\n",
+        "security": [
+          {
+            "Basic": []
+          }
+        ],
+        "operationId": "CreateMultipayoutTask",
+        "summary": "Create multipayout task",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CryptoName"
+          }
+        ],
+        "tags": [
+          "Payouts"
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "label": "CLI",
+            "source": "curl --location --request POST 'https://demo.shkeeper.io/api/v1/ETH-USDT/multipayout' \\\n--user admin:admin \\\n--header 'Content-Type: application/json' \\\n--header 'Cookie: session=68ad6cc3-cdf6-49de-9756-0c6dbabe3b04' \\\n--data-raw '[{\"dest\":\"0xBD26e3512ce84F315e90E3FE75907bfbB5bD0c44\",\"amount\":\"100\"},{\"dest\":\"0xE77895BAda700d663f033510f73f1E988CF55756\",\"amount\":\"200.11\"}]'\n"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMultipayoutTaskRequest"
+              },
+              "examples": {
+                "default_example": {
+                  "$ref": "#/components/examples/CreateMultipayoutTaskRequestExample"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Create multipayout task",
+                  "properties": {
+                    "task_id": {
+                      "type": "string",
+                      "description": "Multipayout task ID"
+                    }
+                  }
+                },
+                "examples": {
+                  "success_task": {
+                    "summary": "Multipayout task",
+                    "value": {
+                      "task_id": "b2a01bb0-8abe-403b-a3fa-8124c84bcf23"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Method Not Allowed"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          },
+          "default": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "msg": {
+                      "type": "string",
+                      "description": "Error mesage about the error"
+                    },
+                    "status": {
+                      "type": "string",
+                      "description": "error"
+                    }
+                  }
+                },
+                "examples": {
+                  "wrong_attr": {
+                    "value": {
+                      "msg": "Bad destination address in {'dest': '0xE77895BAda700d663f033510f73f1E988CF5575', 'amount': '200.11'}",
+                      "status": "error"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/{crypto_name}/task/{task_id}": {
+      "get": {
+        "description": "Get status of payout task\n",
+        "security": [
+          {
+            "Basic": []
+          }
+        ],
+        "operationId": "GetTaskStatus",
+        "summary": "Get task status",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CryptoName"
+          },
+          {
+            "$ref": "#/components/parameters/PayoutTaskId"
+          }
+        ],
+        "tags": [
+          "Payouts"
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "label": "CLI",
+            "source": "curl --location --request GET 'https://demo.shkeeper.io/api/v1/ETH-USDT/task/8c618c4a-39fc-4c7a-b4f8-1661ea47fec6' \\\n--user admin:admin\n"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetTaskStatusResponse"
+                },
+                "examples": {
+                  "default_example": {
+                    "$ref": "#/components/examples/GetTaskStatusResponseExample"
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Method Not Allowed"
+          },
+          "default": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "result": {
+                      "type": "string",
+                      "description": "Error mesage about the error"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "PENDING",
+                        "FAILURE",
+                        "SUCCESS"
+                      ],
+                      "description": "Payout task completing status.\n`PENDING` means the task is in progress, and no result is available at this point yet.\n`SUCCESS` means the task is complete, and you are presented with the results.\n`FAILURE` means the task is complete, but with some issues. Check `result` field.\n"
+                    }
+                  }
+                },
+                "examples": {
+                  "not_enought": {
+                    "value": {
+                      "result": "Have not enough tokens on fee account, need 300.11 have 0",
+                      "status": "FAILURE"
+                    }
+                  },
+                  "not_completed": {
+                    "value": {
+                      "result": null,
+                      "status": "PENDING"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "GetCryptoResponse": {
+        "description": "List of available for operate crypto curencies.",
+        "type": "object",
+        "properties": {
+          "crypto": {
+            "type": "array",
+            "description": "Array of available crypto(deprecated)",
+            "items": {
+              "$ref": "#/components/schemas/Crypto"
+            }
+          },
+          "crypto_list": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CryptoObj"
+            },
+            "description": "Array of available crypto"
+          },
+          "status": {
+            "description": "Status of obtaining available crypto currencies",
+            "type": "string"
+          }
+        }
+      },
+      "Crypto": {
+        "type": "string",
+        "description": "Crypto currency"
+      },
+      "CryptoObj": {
+        "type": "object",
+        "description": "Crypto object",
+        "properties": {
+          "display_name": {
+            "type": "string",
+            "description": "Human readible cryptocurrency format"
+          },
+          "name": {
+            "$ref": "#/components/schemas/Crypto"
+          }
+        }
+      },
+      "Transaction": {
+        "type": "object",
+        "description": "Payment transaction",
+        "properties": {
+          "addr": {
+            "type": "string",
+            "description": "SHKeeper invoice cryptocurrency address"
+          },
+          "amount": {
+            "type": "string",
+            "description": "Transaction amount"
+          },
+          "crypto": {
+            "type": "string",
+            "description": "Human readible cryptocurrency format"
+          },
+          "status": {
+            "type": "string",
+            "description": "Transaction status",
+            "enum": [
+              "CONFIRMED",
+              "UNCONFIRMED"
+            ]
+          },
+          "txid": {
+            "type": "string",
+            "description": "Transaction ID"
+          }
+        }
+      },
+      "CallbackTransaction": {
+        "type": "object",
+        "description": "Callback transaction. Only the transaction with `trigger=true` can include AML enrichment fields and SHKeeper AML correlation identifiers.",
+        "properties": {
+          "txid": {
+            "type": "string",
+            "description": "Transaction ID"
+          },
+          "date": {
+            "type": "string",
+            "description": "Transaction date"
+          },
+          "amount_crypto": {
+            "type": "string",
+            "description": "Transaction amount in cryptocurrency"
+          },
+          "amount_fiat": {
+            "type": "string",
+            "description": "Transaction amount in fiat currency"
+          },
+          "amount_fiat_without_fee": {
+            "type": "string",
+            "description": "Transaction amount in fiat currency without SHKeeper fee. Can be negative in case of `FIXED_FEE` or `PERCENT_OR_MINIMAL_FIXED_FEE` policy if transaction `amount_fiat` less than `fee_fixed`"
+          },
+          "fee_fiat": {
+            "type": "string",
+            "description": "SHKeeper fee in fiat for transaction calculated according chosen policy for related cryptocurrency"
+          },
+          "trigger": {
+            "type": "boolean",
+            "description": "`true` if this transaction was the trigger for the callback",
+            "enum": [
+              true,
+              false
+            ]
+          },
+          "crypto": {
+            "type": "string",
+            "description": "Transaction cryptocurrency"
+          },
+          "deposit_id": {
+            "type": "string",
+            "description": "SHKeeper AML deposit identifier for the trigger transaction. Present only when an AML check row exists."
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Stable idempotency key for the trigger transaction AML/deposit event, for example `USDT:<txid>:shkeeper-tx-9`. Present only when an AML check row exists."
+          },
+          "aml": {
+            "$ref": "#/components/schemas/CallbackAmlPayload"
+          }
+        },
+        "required": [
+          "txid",
+          "date",
+          "amount_crypto",
+          "amount_fiat",
+          "amount_fiat_without_fee",
+          "fee_fiat",
+          "trigger",
+          "crypto"
+        ]
+      },
+      "Invoice": {
+        "type": "object",
+        "description": "SHKeeper invoice",
+        "properties": {
+          "amount_fiat": {
+            "type": "string",
+            "description": "SHKeeper invoice amount(Included fee)"
+          },
+          "balance_fiat": {
+            "type": "string",
+            "description": "Balance accumulated on invoice in fiat curency"
+          },
+          "external_id": {
+            "type": "string",
+            "description": "A unique order_id or invoice_id from your store."
+          },
+          "fiat": {
+            "type": "string",
+            "description": "Fiat currency code in `ISO 4217` format for conversion. Currently, only `USD` is supported.",
+            "enum": [
+              "USD"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "SHKeeper invoice status.\n`UNPAID` - invoice with no payments.\n`PARTIAL` - partial invoice payment.\n`PAID` - full invoice payment.\n`OVERPAID` - overpaid invoice.\n",
+            "enum": [
+              "UNPAID",
+              "PARTIAL",
+              "PAID",
+              "OVERPAID"
+            ]
+          },
+          "txs": {
+            "type": "array",
+            "description": "Transactions related to invoice",
+            "items": {
+              "$ref": "#/components/schemas/Transaction"
+            }
+          }
+        }
+      },
+      "PayoutResultObj": {
+        "type": "object",
+        "description": "Payout result",
+        "properties": {
+          "amount": {
+            "type": "string",
+            "description": "Sending amount"
+          },
+          "dest": {
+            "type": "string",
+            "description": "Destination cryptocurrency address"
+          },
+          "status": {
+            "type": "string",
+            "description": "Payout status",
+            "enum": [
+              "success",
+              "error"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Error message. Sending in case of error status"
+          },
+          "txids": {
+            "type": "array",
+            "description": "Payout Transaction ID",
+            "items": {
+              "type": "string",
+              "description": "Transaction ID"
+            }
+          }
+        }
+      },
+      "CreatePaymentRequest": {
+        "description": "Create SHKeeper invoice and obtain crypto currency address",
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "description": "A unique order_id or invoice_id from your store."
+          },
+          "fiat": {
+            "type": "string",
+            "description": "Currency code in ISO 4217 format for conversion. Currently, only USD is supported.",
+            "enum": [
+              "USD"
+            ]
+          },
+          "amount": {
+            "type": "string",
+            "description": "The amount for which the invoice should be created in SHKeeper."
+          },
+          "callback_url": {
+            "type": "string",
+            "description": "The URL to which SHKeeper will send notifications in the event of transactions related to the created invoices."
+          }
+        },
+        "required": [
+          "external_id",
+          "fiat",
+          "amount",
+          "callback_url"
+        ]
+      },
+      "CreatePaymentRequestResponse": {
+        "description": "Information about created/updated invoice",
+        "properties": {
+          "amount": {
+            "type": "string",
+            "description": "Amount in cryptocurrency with added SHKeeper fee"
+          },
+          "display_name": {
+            "type": "string",
+            "description": "cryptocurrency display name"
+          },
+          "exchange_rate": {
+            "type": "string",
+            "description": "cryptocurrency to fiat exchange rate for the moment of invoice generated"
+          },
+          "id": {
+            "type": "string",
+            "description": "SHKeeper invoice id"
+          },
+          "recalculate_after": {
+            "type": "string",
+            "description": "Time to hold exchange rate for the client, if 0 - no recalculate when recived payment"
+          },
+          "status": {
+            "type": "string",
+            "description": "Creating SHKeeper invoice status"
+          },
+          "wallet": {
+            "type": "string",
+            "description": "Generated address for chosen cryptocurrency assigned to SHKeeper invoice"
+          }
+        }
+      },
+      "GetInvoiceByExternalIdResponse": {
+        "description": "Detailed information about SHKeeper invoice by external_id",
+        "type": "object",
+        "properties": {
+          "invoices": {
+            "type": "array",
+            "description": "Array of found invoices",
+            "items": {
+              "$ref": "#/components/schemas/Invoice"
+            }
+          },
+          "status": {
+            "description": "Status of request",
+            "type": "string"
+          }
+        }
+      },
+      "GetAddressesByCryptoNameResponse": {
+        "description": "List of generated addresses for provided cryptocurrency",
+        "type": "object",
+        "properties": {
+          "addresses": {
+            "type": "array",
+            "description": "Array of cryptocurrency addresses",
+            "items": {
+              "type": "string",
+              "description": "cryptocurrency address"
+            }
+          },
+          "status": {
+            "description": "Status of request",
+            "type": "string"
+          }
+        }
+      },
+      "GetTransactionsByCryptoNameAndAddrResponse": {
+        "description": "List of address payment transactions",
+        "type": "object",
+        "properties": {
+          "transactions": {
+            "type": "array",
+            "description": "Array of found transactions",
+            "items": {
+              "$ref": "#/components/schemas/Transaction"
+            }
+          },
+          "status": {
+            "description": "Status of request",
+            "type": "string"
+          }
+        }
+      },
+      "GetTransactionInfoByTxidAndExternalIdResponse": {
+        "description": "Payment transaction info",
+        "type": "object",
+        "properties": {
+          "info": {
+            "type": "object",
+            "description": "Transaction information",
+            "properties": {
+              "addr": {
+                "type": "string",
+                "description": "SHKeeper invoice cryptocurrency address"
+              },
+              "amount": {
+                "type": "string",
+                "description": "Transaction amount"
+              },
+              "crypto": {
+                "type": "string",
+                "description": "Human readible cryptocurrency format"
+              }
+            }
+          },
+          "status": {
+            "description": "Status of request",
+            "type": "string"
+          }
+        }
+      },
+      "CreatePayoutTaskRequest": {
+        "description": "Payout task object",
+        "type": "object",
+        "properties": {
+          "amount": {
+            "description": "Payout amount",
+            "type": "string"
+          },
+          "destination": {
+            "description": "For `XRP`, the destination address must be provided in the `X-address` format. The `X-address` format replaces the use of a separate destination tag when sending funds to a multi-user wallet on the `XRP` ledger, such as those of exchanges and custodial services.",
+            "type": "string"
+          },
+          "fee": {
+            "description": "Transaction fee.\n`fee` must always be specified, even for cryptocurrencies with automatically determined fees.\nFor `BTC`, it is specified in `sat/vByte`; for `LTC` and `DOGE`, it is in `sat/Byte`.\nFor `XMR`, an integer (1-4) is passed to set the transaction priority:\n`1` - Unimportant,\n`2` - Normal,\n`3` - Elevated,\n`4` - Priority.\nFor other cryptocurrencies, any value can be passed, the optimal fee is calculated and set automatically, and this field is ignored.\n",
+            "type": "string"
+          }
+        },
+        "required": [
+          "amount",
+          "destination",
+          "fee"
+        ]
+      },
+      "CreateMultipayoutTaskRequest": {
+        "description": "Payout task array",
+        "type": "array",
+        "items": {
+          "type": "object",
+          "description": "Payout task object",
+          "properties": {
+            "amount": {
+              "description": "Payout amount",
+              "type": "string"
+            },
+            "dest": {
+              "description": "Payout destination",
+              "type": "string"
+            },
+            "dest_tag": {
+              "description": "Useful for `XRP` payout, for providing dest in a plain format, otherwise you should convert it to `X-address` format manually",
+              "type": "string"
+            }
+          },
+          "required": [
+            "amount",
+            "dest"
+          ]
+        }
+      },
+      "GetTaskStatusResponse": {
+        "description": "Payout task array",
+        "type": "object",
+        "properties": {
+          "result": {
+            "description": "Payout amount",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PayoutResultObj"
+            }
+          },
+          "status": {
+            "description": "Task status",
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "FAILURE",
+              "SUCCESS"
+            ]
+          }
+        }
+      },
+      "CallbackPaymentRequest": {
+        "description": "Confirmed payment callback sent to the merchant callback_url. Current `build_payment_notification()` output contains invoice/payment facts and optional AML enrichment facts. It does not emit merchant-facing business decision fields; Grither Pay makes credit/manual-review/reject decisions from the trigger transaction and AML facts.",
+        "type": "object",
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "description": "Invoice or Order ID in the external system"
+          },
+          "crypto": {
+            "type": "string",
+            "description": "Cryptocurrency (provided during payment request creation)"
+          },
+          "addr": {
+            "type": "string",
+            "description": "SHKeeper invoice wallet address that receives payments"
+          },
+          "fiat": {
+            "type": "string",
+            "description": "Fiat currency (provided during payment request creation)",
+            "enum": [
+              "USD"
+            ]
+          },
+          "balance_fiat": {
+            "type": "string",
+            "description": "SHKeeper invoice amount in fiat currency"
+          },
+          "balance_crypto": {
+            "type": "string",
+            "description": "SHKeeper invoice amount in cryptocurrency"
+          },
+          "paid": {
+            "type": "boolean",
+            "description": "`true` if the payment request is fully paid, `false` if only a partial or no payment is received",
+            "enum": [
+              true,
+              false
+            ]
+          },
+          "status": {
+            "description": "SHKeeper invoice status",
+            "type": "string",
+            "enum": [
+              "PARTIAL",
+              "PAID",
+              "OVERPAID"
+            ]
+          },
+          "overpaid_fiat": {
+            "description": "In case of SHKeeper invoice status `OVERPAID`, the overpaid amount will be shown here",
+            "type": "string"
+          },
+          "fee_percent": {
+            "description": "SHKeeper fee percentage added to the invoice amount",
+            "type": "string"
+          },
+          "fee_fixed": {
+            "description": "SHKeeper fixed fee in fiat added to the invoice amount",
+            "type": "string"
+          },
+          "fee_policy": {
+            "description": "SHKeeper fee calculation policy. `PERCENT_OR_MINIMAL_FIXED_FEE` - use fixed fee value if percent from amount less than fixed",
+            "type": "string",
+            "enum": [
+              "NO_FEE",
+              "PERCENT_FEE",
+              "FIXED_FEE",
+              "PERCENT_OR_MINIMAL_FIXED_FEE"
+            ]
+          },
+          "transactions": {
+            "description": "SHKeeper invoice transactions",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CallbackTransaction"
+            }
+          }
+        },
+        "required": [
+          "external_id",
+          "crypto",
+          "addr",
+          "fiat",
+          "balance_fiat",
+          "balance_crypto",
+          "paid",
+          "status",
+          "transactions",
+          "fee_percent",
+          "fee_fixed",
+          "fee_policy",
+          "overpaid_fiat"
+        ]
+      },
+      "CallbackAmlPolicy": {
+        "type": "object",
+        "description": "Local SHKeeper AML policy facts used when an AML check was skipped. These fields are informational; Grither Pay decides whether to credit, review, or reject the deposit.",
+        "properties": {
+          "min_check_amount_fiat": {
+            "type": "string",
+            "description": "Minimum fiat amount configured in SHKeeper before AML checking is required."
+          },
+          "cumulative_amount_fiat": {
+            "type": "string",
+            "description": "Cumulative fiat amount observed for the configured skip window."
+          },
+          "cumulative_limit_fiat": {
+            "type": "string",
+            "description": "Maximum cumulative fiat amount allowed by the local skip policy before AML checking is required."
+          },
+          "cumulative_window": {
+            "type": "string",
+            "description": "Cumulative skip-policy window, for example `24h`."
+          }
+        },
+        "additionalProperties": false
+      },
+      "CallbackAmlPayload": {
+        "type": "object",
+        "description": "AML enrichment facts for the trigger transaction. SHKeeper does not emit business decision fields in this object. Grither Pay must decide credit/manual review/reject from these facts and its own policy.",
+        "properties": {
+          "supported": {
+            "type": "boolean",
+            "description": "`true` when the transaction asset/network is supported by the configured AML provider; `false` for unsupported assets such as networks not covered by Koinkyt."
+          },
+          "checked": {
+            "type": "boolean",
+            "description": "`true` only when SHKeeper received a usable AML result from the provider. `false` can mean unsupported, skipped by local policy, provider error, timeout, incomplete result, pending, or checking."
+          },
+          "check_status": {
+            "type": "string",
+            "description": "Normalized AML check status for Grither Pay integration. Use this field for application decisioning instead of raw `provider_status`.",
+            "enum": [
+              "success",
+              "skipped",
+              "unsupported",
+              "pending",
+              "checking",
+              "timeout",
+              "error",
+              "incomplete"
+            ]
+          },
+          "reason_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Normalized reason for unchecked or non-success AML state. `null` for successful checks and usually while a check is still pending/checking. Known values include `unsupported_asset`, `amount_below_shkeeper_threshold`, `aml_pending_timeout`, `aml_provider_error`, `incomplete_aml_result`, and raw provider/sidecar error codes."
+          },
+          "provider": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "AML provider name, for example `koinkyt`."
+          },
+          "provider_status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Raw AML provider/sidecar status. This is a source-system fact and may differ from normalized `check_status`, for example `provider_status=checking` with `check_status=error` after terminal retry failure."
+          },
+          "score": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "AML risk score returned by the provider. SHKeeper serializes decimals as strings. `null` when no usable AML score is available."
+          },
+          "uid": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Provider check identifier when available."
+          },
+          "asset": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Asset passed to the AML provider, for example `USDT`."
+          },
+          "network": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Network/blockchain passed to the AML provider, for example `TRON`, `ETH`, or `BTC`."
+          },
+          "signals": {
+            "type": "object",
+            "description": "Provider-specific expanded AML signal payload. Koinkyt responses can include `from_entity`, `indirects`, `risk_score_grade`, `to_entity`, and `too_many_indirects`; exact shape depends on provider response.",
+            "additionalProperties": true
+          },
+          "report_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Provider report URL when available."
+          },
+          "error_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Raw technical error code from SHKeeper/AML sidecar, if any. For business flow use normalized `reason_code`."
+          },
+          "error_message": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Raw technical error message from SHKeeper/AML sidecar, if any."
+          },
+          "policy": {
+            "$ref": "#/components/schemas/CallbackAmlPolicy"
+          }
+        },
+        "required": [
+          "supported",
+          "checked",
+          "check_status",
+          "reason_code",
+          "provider",
+          "provider_status",
+          "score",
+          "uid",
+          "asset",
+          "network",
+          "signals",
+          "report_url",
+          "error_code",
+          "error_message",
+          "policy"
+        ],
+        "additionalProperties": false
+      },
+      "UnconfirmedCallbackPaymentRequest": {
+        "description": "Unconfirmed transaction callback sent by SHKeeper before final confirmation for networks that support unconfirmed notifications. This payload has a different shape from the confirmed payment callback and never includes AML enrichment.",
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Unconfirmed transaction marker.",
+            "enum": [
+              "unconfirmed"
+            ]
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Invoice or Order ID in the external system."
+          },
+          "crypto": {
+            "type": "string",
+            "description": "Transaction cryptocurrency."
+          },
+          "addr": {
+            "type": "string",
+            "description": "Invoice wallet address that received the unconfirmed transaction."
+          },
+          "txid": {
+            "type": "string",
+            "description": "Unconfirmed transaction ID."
+          },
+          "amount": {
+            "type": "string",
+            "description": "Unconfirmed transaction amount in cryptocurrency."
+          }
+        },
+        "required": [
+          "status",
+          "external_id",
+          "crypto",
+          "addr",
+          "txid",
+          "amount"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "securitySchemes": {
+      "API_Key": {
+        "type": "apiKey",
+        "description": "SHKeeper supports user authentication and authorization through an API Key generated by the user. Send the API Key as a header value to Authorization with the format: `X-Shkeeper-Api-Key {API Key}`.\n",
+        "name": "X-Shkeeper-Api-Key",
+        "in": "header"
+      },
+      "Basic": {
+        "type": "http",
+        "description": "SHKeeper supports authenticating and authorizing users through the Basic HTTP authentication scheme. Send the user and password encoded in base64 with the format `Basic {base64(username:password)}`. Using this authentication is required for payout-related endpoints, and for metrics, but another credentials. Metric credentials can be set by environment variables: `METRICS_USERNAME`, `METRICS_PASSWORD`. The default `username`:`password` is `shkeeper`:`shkeeper`.\n",
+        "scheme": "Basic"
+      }
+    },
+    "examples": {
+      "CreatePaymentRequestExample": {
+        "summary": "Get Available Crypto Currencies",
+        "value": {
+          "external_id": 107,
+          "fiat": "USD",
+          "amount": "7.8",
+          "callback_url": "https://my-billing/callback.php"
+        }
+      },
+      "CreatePaymentRequestResponseExample": {
+        "summary": "Get Available Crypto Currencies",
+        "value": {
+          "amount": "7.8",
+          "display_name": "ERC20 USDT",
+          "exchange_rate": "1",
+          "id": 61,
+          "recalculate_after": 0,
+          "status": "success",
+          "wallet": "0x6f2Fc9D7205B7D9037dDE45B5f9e12B18EA07e27"
+        }
+      },
+      "GetInvoiceByExternalIdResponseExample": {
+        "summary": "Get SHKeeper invoices status by external_id",
+        "value": {
+          "invoices": [
+            {
+              "amount_fiat": "10.0000000000",
+              "balance_fiat": "23.0003000000",
+              "external_id": "233822",
+              "fiat": "USD",
+              "status": "OVERPAID",
+              "txs": [
+                {
+                  "addr": "0xE77895BAda700d663f033510f73f1E988CF55756",
+                  "amount": "5.0000000000",
+                  "crypto": "ETH-USDT",
+                  "status": "CONFIRMED",
+                  "txid": "0x4f9df3c2255ee6f1bda50dfab1a84b87345aeaf89863afea9a2687e0e51d42dc"
+                },
+                {
+                  "addr": "0xE77895BAda700d663f033510f73f1E988CF55756",
+                  "amount": "3.0000000000",
+                  "crypto": "ETH-USDC",
+                  "status": "CONFIRMED",
+                  "txid": "0xdaae319a0bee00f362f40ae725932c25a9b33bd33f3346ec22464361a56fcd1d"
+                }
+              ]
+            }
+          ],
+          "status": "success"
+        }
+      },
+      "GetAddressesByCryptoNameExample": {
+        "summary": "Get SHKeeper generated addresses by crypto_name",
+        "value": {
+          "addresses": [
+            "0x0A71f4741DcaD3C06AA51eE6cF0E22675507d0d0",
+            "0x700b3453edfE0b1885dA9D41FE472451ceD1292d"
+          ],
+          "status": "success"
+        }
+      },
+      "GetTransactionsByCryptoNameAndAddrResponseExample": {
+        "summary": "Get SHKeeper transactions for specified address of provided cryptocurrency",
+        "value": {
+          "transactions": [
+            {
+              "addr": "0xE77895BAda700d663f033510f73f1E988CF55756",
+              "amount": "3.0000000000",
+              "crypto": "ETH-USDC",
+              "status": "CONFIRMED",
+              "txid": "0xdaae319a0bee00f362f40ae725932c25a9b33bd33f3346ec22464361a56fcd1d"
+            }
+          ],
+          "status": "success"
+        }
+      },
+      "GetTransactionInfoByTransactionIdAndExternalIdResponseExample": {
+        "summary": "Get SHKeeper transactions for specified address of provided cryptocurrency",
+        "value": {
+          "transactions": [
+            {
+              "addr": "0xE77895BAda700d663f033510f73f1E988CF55756",
+              "amount": "3.0000000000",
+              "crypto": "ETH-USDC",
+              "status": "CONFIRMED",
+              "txid": "0xdaae319a0bee00f362f40ae725932c25a9b33bd33f3346ec22464361a56fcd1d"
+            }
+          ],
+          "status": "success"
+        }
+      },
+      "GetTransactionInfoByTxidAndExternalIdResponseExample": {
+        "summary": "Get SHKeeper transactions for specified address of provided cryptocurrency",
+        "value": {
+          "info": {
+            "addr": "0xE77895BAda700d663f033510f73f1E988CF55756",
+            "amount": "3.0000000000",
+            "crypto": "ETH-USDC"
+          },
+          "status": "success"
+        }
+      },
+      "GetMetricsExample": {
+        "summary": "Metrics",
+        "value": "# HELP geth_last_release_info Version of the latest release from https://github.com/bnb-chain/bsc/releases\n# TYPE geth_last_release_info gauge\ngeth_last_release_info{name=\"v1.4.12\",published_at=\"2024-07-24T04:18:53Z\",tag_name=\"v1.4.12\",version=\"1.4.12\"} 1.0\n# HELP geth_fullnode_version_info Current geth version in use\n# TYPE geth_fullnode_version_info gauge\ngeth_fullnode_version_info{version=\"1.4.11\"} 1.0\n# HELP bnb_fullnode_status Connection status to bnb fullnode\n# TYPE bnb_fullnode_status gauge\nbnb_fullnode_status 1.0\n# HELP bnb_fullnode_last_block Last block loaded to the fullnode\n# TYPE bnb_fullnode_last_block gauge\nbnb_fullnode_last_block 4.2715492e+07\n# HELP bnb_wallet_last_block Last checked block\n# TYPE bnb_wallet_last_block gauge\nbnb_wallet_last_block 4.271549e+07\n# HELP bnb_fullnode_last_block_timestamp Last block timestamp loaded to the fullnode\n# TYPE bnb_fullnode_last_block_timestamp gauge\nbnb_fullnode_last_block_timestamp 1.722866516e+09\n# HELP bnb_wallet_last_block_timestamp Last checked block timestamp\n# TYPE bnb_wallet_last_block_timestamp gauge\nbnb_wallet_last_block_timestamp 1.72286651e+09\n# HELP bnb_shkeeper_status Connection status to bnb_shkeeper\n# TYPE bnb_shkeeper_status gauge\nbnb_shkeeper_status 1.0\n# HELP geth_last_release_info Version of the latest release from https://github.com/ethereum/go-ethereum/releases\n# TYPE geth_last_release_info gauge\ngeth_last_release_info{name=\"Bothros (v1.14.5)\",published_at=\"2024-06-06T13:41:53Z\",tag_name=\"v1.14.5\",version=\"1.14.5\"}\n1.0\n# HELP prysm_last_release_info Version of the latest release from https://github.com/prysmaticlabs/prysm/releases\n# TYPE prysm_last_release_info gauge\nprysm_last_release_info{name=\"v5.0.4\",published_at=\"2024-06-21T16:13:40Z\",tag_name=\"v5.0.4\",version=\"5.0.4\"} 1.0\n# HELP geth_fullnode_version_info Current geth version in use\n# TYPE geth_fullnode_version_info gauge\ngeth_fullnode_version_info{version=\"1.14.6\"} 1.0\n# HELP prysm_fullnode_version_info Current prysm version in use\n# TYPE prysm_fullnode_version_info gauge\nprysm_fullnode_version_info 1.0\n# HELP ethereum_fullnode_status Connection status to ethereum fullnode\n# TYPE ethereum_fullnode_status gauge\nethereum_fullnode_status 1.0\n# HELP ethereum_fullnode_last_block Last block loaded to the fullnode\n# TYPE ethereum_fullnode_last_block gauge\nethereum_fullnode_last_block 6.442062e+06\n# HELP ethereum_wallet_last_block Last checked block\n# TYPE ethereum_wallet_last_block gauge\nethereum_wallet_last_block 6.44206e+06\n# HELP ethereum_fullnode_last_block_timestamp Last block timestamp loaded to the fullnode\n# TYPE ethereum_fullnode_last_block_timestamp gauge\nethereum_fullnode_last_block_timestamp 1.722866508e+09\n# HELP ethereum_wallet_last_block_timestamp Last checked block timestamp\n# TYPE ethereum_wallet_last_block_timestamp gauge\nethereum_wallet_last_block_timestamp 1.722866484e+09\n# HELP ethereum_shkeeper_status Connection status to ethereum_shkeeper\n# TYPE ethereum_shkeeper_status gauge\nethereum_shkeeper_status 1.0\n# HELP xrp_shkeeper_status Connection status to xrp_shkeeper\n# TYPE xrp_shkeeper_status gauge\nxrp_shkeeper_status 0.0\n"
+      },
+      "CreatePayoutTaskRequestExample": {
+        "summary": "Create payout task",
+        "value": {
+          "amount": 107,
+          "destination": "0xBD26e3512ce84F315e90E3FE75907bfbB5bD0c44",
+          "fee": "10"
+        }
+      },
+      "CreateMultipayoutTaskRequestExample": {
+        "summary": "Create multipayout task",
+        "value": [
+          {
+            "dest": "0xBD26e3512ce84F315e90E3FE75907bfbB5bD0c44",
+            "amount": "100"
+          },
+          {
+            "dest": "0xE77895BAda700d663f033510f73f1E988CF55756",
+            "amount": "200.11"
+          }
+        ]
+      },
+      "GetTaskStatusResponseExample": {
+        "summary": "Payout task status",
+        "value": {
+          "result": [
+            {
+              "amount": "100",
+              "dest": "TGusXhweqkJ1aJftjmAfLqA1rfEWD4hSGZ",
+              "status": "success",
+              "txids": [
+                "da2996bae7a8a4d655a1288f8f4c79ce0aa3640e61f8ae8de08ae9c70c72d90d"
+              ]
+            },
+            {
+              "amount": "200.11",
+              "dest": "TYtD9md7cHuB4P6kDd362jhcUGP7cJybF7",
+              "status": "success",
+              "txids": [
+                "d8972ac9c964adbc25486d2cfdf2de7b61c3f0ca7510aa7cddc832a9bccdf551"
+              ]
+            }
+          ],
+          "status": "SUCCESS"
+        }
+      },
+      "CallbackPaymentRequestExample": {
+        "summary": "Payment notification callback without AML enrichment",
+        "value": {
+          "external_id": "107",
+          "crypto": "ETH-USDT",
+          "addr": "0x6f2Fc9D7205B7D9037dDE45B5f9e12B18EA07e27",
+          "fiat": "USD",
+          "balance_fiat": "7.8",
+          "balance_crypto": "7.8",
+          "paid": true,
+          "status": "PAID",
+          "transactions": [
+            {
+              "txid": "0x23487a9890b80bb908cc07097d0ddd098fff0980bb098ccc098aa0addd098880",
+              "date": "2024-06-25 14:45:20",
+              "amount_crypto": "3.8",
+              "amount_fiat": "3.8",
+              "amount_fiat_without_fee": "3.7254901961",
+              "fee_fiat": "0.0745098039",
+              "trigger": false,
+              "crypto": "ETH-USDT"
+            },
+            {
+              "txid": "0x518a10b13a708fd11aa98db88c625dd45130db6656ba822600b01d0c53c85078",
+              "date": "2024-06-25 15:45:38",
+              "amount_crypto": "4",
+              "amount_fiat": "4",
+              "amount_fiat_without_fee": "3.9215686275",
+              "fee_fiat": "0.0784313725",
+              "trigger": true,
+              "crypto": "ETH-USDT"
+            }
+          ],
+          "fee_percent": "2",
+          "fee_fixed": "0",
+          "fee_policy": "PERCENT_FEE",
+          "overpaid_fiat": "0.00"
+        },
+        "description": "Confirmed callback without AML enrichment. In the Grither Pay fork, only the trigger transaction includes `aml` when AML enrichment is applicable or when the asset is explicitly unsupported."
+      },
+      "CallbackPaymentRequestAmlCheckedExample": {
+        "summary": "Payment callback with successful AML enrichment",
+        "description": "Successful AML result. Grither Pay receives the score and provider signals, then decides whether to credit, review, or reject according to its own policy.",
+        "value": {
+          "external_id": "static-test-user-3-usdt",
+          "crypto": "USDT",
+          "addr": "TSgr6nr7zH7KxqviCryiDc61WaVuA91gL6",
+          "fiat": "USD",
+          "balance_fiat": "2.9",
+          "balance_crypto": "2.9",
+          "paid": false,
+          "status": "PARTIAL",
+          "transactions": [
+            {
+              "txid": "0e2b7a1463a8a917048b3d4b77462d9ee208fadaa6bc343cf408a386eeac9184",
+              "date": "2026-05-05 12:47:11",
+              "amount_crypto": "2.9",
+              "amount_fiat": "2.9",
+              "amount_fiat_without_fee": "2.8431372549",
+              "fee_fiat": "0.0568627451",
+              "trigger": true,
+              "crypto": "USDT",
+              "deposit_id": "shkeeper-tx-9",
+              "idempotency_key": "USDT:0e2b7a1463a8a917048b3d4b77462d9ee208fadaa6bc343cf408a386eeac9184:shkeeper-tx-9",
+              "aml": {
+                "supported": true,
+                "checked": true,
+                "check_status": "success",
+                "reason_code": null,
+                "provider": "koinkyt",
+                "provider_status": "success",
+                "score": "0.1",
+                "uid": "8ac5ef3e-801e-4902-945d-43422f7bbacb",
+                "asset": "USDT",
+                "network": "TRON",
+                "signals": {
+                  "from_entity": [
+                    {
+                      "name": "Bybit",
+                      "type": "EXCHANGE_LICENSED",
+                      "type_label": "Licensed exchange service"
+                    }
+                  ],
+                  "indirects": [
+                    {
+                      "risk_score_grade": "low",
+                      "total": "376416040734.663344",
+                      "total_count": "91.07862123453376017672226191",
+                      "total_count_coef": "0.9107862123453376017672226191",
+                      "type": "EXCHANGE_LICENSED",
+                      "type_label": "Licensed exchange service"
+                    },
+                    {
+                      "risk_score_grade": "moderate",
+                      "total": "11742917992.093057",
+                      "total_count": "2.841347509799532943259987846",
+                      "total_count_coef": "0.02841347509799532943259987846",
+                      "type": "EXCHANGE_UNLICENSED",
+                      "type_label": "Unlicensed exchange service"
+                    },
+                    {
+                      "risk_score_grade": "high",
+                      "total": "6010933129.160830",
+                      "total_count": "1.454421285204636942663587085",
+                      "total_count_coef": "0.01454421285204636942663587085",
+                      "type": "ILLEGAL_SERVICE",
+                      "type_label": "Illegal service"
+                    },
+                    {
+                      "risk_score_grade": "undefined",
+                      "total": "5866337869.896068",
+                      "total_count": "1.419434633665608328746738163",
+                      "total_count_coef": "0.01419434633665608328746738163",
+                      "type": "UNDEFINED",
+                      "type_label": "Undefined"
+                    },
+                    {
+                      "risk_score_grade": "high",
+                      "total": "2661987596.329713",
+                      "total_count": "0.6441015625793817767079781650",
+                      "total_count_coef": "0.00644101562579381776707978165",
+                      "type": "SANCTIONS",
+                      "type_label": "Sanctions"
+                    },
+                    {
+                      "risk_score_grade": "moderate",
+                      "total": "2430073291.032951",
+                      "total_count": "0.5879869636112600307268965486",
+                      "total_count_coef": "0.005879869636112600307268965486",
+                      "type": "PAYMENT_SYSTEM",
+                      "type_label": "Payment system"
+                    },
+                    {
+                      "risk_score_grade": "high",
+                      "total": "2176784515.105725",
+                      "total_count": "0.5267005411713193166898590158",
+                      "total_count_coef": "0.005267005411713193166898590158",
+                      "type": "GAMBLING",
+                      "type_label": "Gambling"
+                    },
+                    {
+                      "risk_score_grade": "low",
+                      "total": "2146228868.940412",
+                      "total_count": "0.5193072161731726601426617023",
+                      "total_count_coef": "0.005193072161731726601426617023",
+                      "type": "ONLINE_WALLET",
+                      "type_label": "Online wallet"
+                    },
+                    {
+                      "risk_score_grade": "moderate",
+                      "total": "1039999557.208774",
+                      "total_count": "0.2516410447605508530494980404",
+                      "total_count_coef": "0.002516410447605508530494980404",
+                      "type": "DECENTRALIZED_EXCHANGE",
+                      "type_label": "Decentralized exchange"
+                    },
+                    {
+                      "risk_score_grade": "high",
+                      "total": "786272895.869233",
+                      "total_count": "0.1902486704075765537721521498",
+                      "total_count_coef": "0.001902486704075765537721521498",
+                      "type": "SCAM",
+                      "type_label": "Scam"
+                    },
+                    {
+                      "risk_score_grade": "moderate",
+                      "total": "628892625.370359",
+                      "total_count": "0.1521685237204711778021875458",
+                      "total_count_coef": "0.001521685237204711778021875458",
+                      "type": "BRIDGES",
+                      "type_label": "Bridges"
+                    },
+                    {
+                      "risk_score_grade": "high",
+                      "total": "515182039.434055",
+                      "total_count": "0.1246548094626084785245961854",
+                      "total_count_coef": "0.001246548094626084785245961854",
+                      "type": "STOLEN_ASSETS",
+                      "type_label": "Stolen assets"
+                    },
+                    {
+                      "risk_score_grade": "undefined",
+                      "total": "470605767.841474",
+                      "total_count": "0.1138690168367032024799576029",
+                      "total_count_coef": "0.001138690168367032024799576029",
+                      "type": "OTHER",
+                      "type_label": "Other"
+                    },
+                    {
+                      "risk_score_grade": "low",
+                      "total": "226814397.291060",
+                      "total_count": "0.05488061173241379445745329578",
+                      "total_count_coef": "0.0005488061173241379445745329578",
+                      "type": "P2P_EXCHANGE_LICENSED",
+                      "type_label": "P2P Exchange licensed"
+                    },
+                    {
+                      "risk_score_grade": "moderate",
+                      "total": "73723392.374778",
+                      "total_count": "0.01783830709531445446861386223",
+                      "total_count_coef": "0.0001783830709531445446861386223",
+                      "type": "P2P_EXCHANGE_UNLICENSED",
+                      "type_label": "P2P Exchange unlicensed"
+                    },
+                    {
+                      "risk_score_grade": "high",
+                      "total": "29342343.191154",
+                      "total_count": "0.007099751000050074880940406892",
+                      "total_count_coef": "0.00007099751000050074880940406892",
+                      "type": "TERRORISM_FINANCING",
+                      "type_label": "Terrorism financing"
+                    },
+                    {
+                      "risk_score_grade": "moderate",
+                      "total": "18825647.824089",
+                      "total_count": "0.004555103561257535833583374102",
+                      "total_count_coef": "0.00004555103561257535833583374102",
+                      "type": "ATM",
+                      "type_label": "ATM"
+                    },
+                    {
+                      "risk_score_grade": "high",
+                      "total": "18322936.769287",
+                      "total_count": "0.004433466264235438054164240545",
+                      "total_count_coef": "0.00004433466264235438054164240545",
+                      "type": "SEIZED_ASSETS",
+                      "type_label": "Seized assets"
+                    },
+                    {
+                      "risk_score_grade": "low",
+                      "total": "12506727.807032",
+                      "total_count": "0.003026160953706619508641694292",
+                      "total_count_coef": "0.00003026160953706619508641694292",
+                      "type": "ONLINE_MARKETPLACE",
+                      "type_label": "Online marketplace"
+                    },
+                    {
+                      "risk_score_grade": "high",
+                      "total": "11257691.010316",
+                      "total_count": "0.002723940705350407677480071496",
+                      "total_count_coef": "0.00002723940705350407677480071496",
+                      "type": "DARKNET_MARKETPLACE",
+                      "type_label": "Darknet marketplace"
+                    },
+                    {
+                      "risk_score_grade": "high",
+                      "total": "2810519.773390",
+                      "total_count": "0.0006800408011655252965667513691",
+                      "total_count_coef": "0.000006800408011655252965667513691",
+                      "type": "MALWARE",
+                      "type_label": "Malware"
+                    },
+                    {
+                      "risk_score_grade": "high",
+                      "total": "433737.681277",
+                      "total_count": "0.0001049483170564971853519553963",
+                      "total_count_coef": "0.000001049483170564971853519553963",
+                      "type": "EXTREMISM",
+                      "type_label": "Extremism"
+                    },
+                    {
+                      "risk_score_grade": "high",
+                      "total": "329258.905035",
+                      "total_count": "0.00007966835590016478853539733949",
+                      "total_count_coef": "7.966835590016478853539733949E-7",
+                      "type": "RANSOM",
+                      "type_label": "Ransom"
+                    },
+                    {
+                      "risk_score_grade": "high",
+                      "total": "149299.483285",
+                      "total_count": "0.00003612489803061123751114558741",
+                      "total_count_coef": "3.612489803061123751114558741E-7",
+                      "type": "DARKNET_SERVICE",
+                      "type_label": "Darknet service"
+                    },
+                    {
+                      "risk_score_grade": "high",
+                      "total": "85221.352306",
+                      "total_count": "0.00002062038390453258590097189904",
+                      "total_count_coef": "2.062038390453258590097189904E-7",
+                      "type": "DRUGS_TRAFFICKING",
+                      "type_label": "Drugs trafficking"
+                    },
+                    {
+                      "risk_score_grade": "low",
+                      "total": "29703.163366",
+                      "total_count": "0.000007187056004306634440265233960",
+                      "total_count_coef": "7.18705600430663444026523396E-8",
+                      "type": "SEIZURE_OF_FUNDS",
+                      "type_label": "Seizure of funds"
+                    },
+                    {
+                      "risk_score_grade": "high",
+                      "total": "27318.138977",
+                      "total_count": "0.000006609969192233238790257282324",
+                      "total_count_coef": "6.609969192233238790257282324E-8",
+                      "type": "PRIVACY_PROTOCOL",
+                      "type_label": "Privacy protocol"
+                    },
+                    {
+                      "risk_score_grade": "high",
+                      "total": "16357.806278",
+                      "total_count": "0.000003957978090715950980775468292",
+                      "total_count_coef": "3.957978090715950980775468292E-8",
+                      "type": "CHILD_ABUSE_MATERIAL",
+                      "type_label": "Child abuse material"
+                    },
+                    {
+                      "risk_score_grade": "high",
+                      "total": "2020.980315",
+                      "total_count": "4.890017446469126835720168597E-7",
+                      "total_count_coef": "4.890017446469126835720168597E-9",
+                      "type": "ILLEGAL_ARMS_TRAFFICKING",
+                      "type_label": "Illegal arms trafficking"
+                    }
+                  ],
+                  "risk_score_grade": "low",
+                  "to_entity": [],
+                  "too_many_indirects": false
+                },
+                "report_url": "https://explorer.coinkyt.com/explorer/transaction?id=trx-0e2b7a1463a8a917048b3d4b77462d9ee208fadaa6bc343cf408a386eeac9184&blockchain=trx",
+                "error_code": null,
+                "error_message": null,
+                "policy": {}
+              }
+            }
+          ],
+          "fee_percent": "2",
+          "fee_fixed": "0",
+          "fee_policy": "PERCENT_FEE",
+          "overpaid_fiat": "0.00"
+        }
+      },
+      "CallbackPaymentRequestAmlUnsupportedExample": {
+        "summary": "Payment callback for asset not supported by AML provider",
+        "description": "Unsupported AML coverage is reported as unchecked AML facts. SHKeeper does not mark the deposit for manual review; Grither Pay decides how to handle the payment.",
+        "value": {
+          "external_id": "static-test-user-bnb",
+          "crypto": "BNB",
+          "addr": "0x1111111111111111111111111111111111111111",
+          "fiat": "USD",
+          "balance_fiat": "10",
+          "balance_crypto": "0.02",
+          "paid": true,
+          "status": "PAID",
+          "transactions": [
+            {
+              "txid": "0xunsupportedbnbtxid",
+              "date": "2026-05-07 08:20:00",
+              "amount_crypto": "0.02",
+              "amount_fiat": "10",
+              "amount_fiat_without_fee": "9.8039215686",
+              "fee_fiat": "0.1960784314",
+              "trigger": true,
+              "crypto": "BNB",
+              "aml": {
+                "supported": false,
+                "checked": false,
+                "check_status": "unsupported",
+                "reason_code": "unsupported_asset",
+                "provider": "koinkyt",
+                "provider_status": "unsupported",
+                "score": null,
+                "uid": null,
+                "asset": "BNB",
+                "network": "BNB",
+                "signals": {},
+                "report_url": null,
+                "error_code": "unsupported_asset",
+                "error_message": "AML provider does not support this asset",
+                "policy": {}
+              }
+            }
+          ],
+          "fee_percent": "2",
+          "fee_fixed": "0",
+          "fee_policy": "PERCENT_FEE",
+          "overpaid_fiat": "0.00"
+        }
+      },
+      "CallbackPaymentRequestAmlSkippedExample": {
+        "summary": "Payment callback where AML check was skipped by local SHKeeper policy",
+        "description": "Small or cumulative-threshold-skipped transaction. Grither Pay receives the skip policy facts and makes the final decision.",
+        "value": {
+          "external_id": "small-usdt-payment",
+          "crypto": "USDT",
+          "addr": "TSgr6nr7zH7KxqviCryiDc61WaVuA91gL6",
+          "fiat": "USD",
+          "balance_fiat": "50",
+          "balance_crypto": "50",
+          "paid": true,
+          "status": "PAID",
+          "transactions": [
+            {
+              "txid": "small-usdt-txid",
+              "date": "2026-05-07 08:25:00",
+              "amount_crypto": "50",
+              "amount_fiat": "50",
+              "amount_fiat_without_fee": "49.0196078431",
+              "fee_fiat": "0.9803921569",
+              "trigger": true,
+              "crypto": "USDT",
+              "deposit_id": "shkeeper-tx-10",
+              "idempotency_key": "USDT:small-usdt-txid:shkeeper-tx-10",
+              "aml": {
+                "supported": true,
+                "checked": false,
+                "check_status": "skipped",
+                "reason_code": "amount_below_shkeeper_threshold",
+                "provider": "koinkyt",
+                "provider_status": null,
+                "score": null,
+                "uid": null,
+                "asset": "USDT",
+                "network": "TRON",
+                "signals": {},
+                "report_url": null,
+                "error_code": null,
+                "error_message": null,
+                "policy": {
+                  "min_check_amount_fiat": "100",
+                  "cumulative_amount_fiat": "50",
+                  "cumulative_limit_fiat": "300",
+                  "cumulative_window": "24h"
+                }
+              }
+            }
+          ],
+          "fee_percent": "2",
+          "fee_fixed": "0",
+          "fee_policy": "PERCENT_FEE",
+          "overpaid_fiat": "0.00"
+        }
+      },
+      "UnconfirmedCallbackPaymentRequestExample": {
+        "summary": "Unconfirmed transaction callback",
+        "description": "Sent before final confirmation for supported networks. This callback has no AML object and should not be used as a final credit decision by Grither Pay.",
+        "value": {
+          "status": "unconfirmed",
+          "external_id": "static-test-user-3-usdt",
+          "crypto": "USDT",
+          "addr": "TSgr6nr7zH7KxqviCryiDc61WaVuA91gL6",
+          "txid": "0e2b7a1463a8a917048b3d4b77462d9ee208fadaa6bc343cf408a386eeac9184",
+          "amount": "2.9"
+        }
+      }
+    },
+    "parameters": {
+      "CryptoName": {
+        "name": "crypto_name",
+        "in": "path",
+        "description": "An identifier for cryptocurrency. Check [Get cryptocurrencies](#tag/Cryptos/operation/getCrypto) to get all available list.",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "example": "ETH-USDC",
+          "enum": [
+            "BTC",
+            "LTC",
+            "DOGE",
+            "XMR",
+            "XRP",
+            "ETH",
+            "ETH-USDT",
+            "ETH-USDC",
+            "TRX",
+            "USDT",
+            "USDC",
+            "AVAX",
+            "AVALANCHE-USDT",
+            "AVALANCHE-USDC",
+            "BNB",
+            "BNB-USDT",
+            "BNB-USDC",
+            "MATIC",
+            "POLYGON-USDT",
+            "POLYGON-USDC"
+          ]
+        }
+      },
+      "CryptoAddr": {
+        "name": "addr",
+        "in": "path",
+        "description": "Cryptocurrency address",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "example": "0xE77895BAda700d663f033510f73f1E988CF55756"
+        }
+      },
+      "ExternalId": {
+        "name": "external_id",
+        "in": "path",
+        "description": "An identifier order_id or invoice_id from your store.",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "example": 233822
+        }
+      },
+      "TransactionId": {
+        "name": "txid",
+        "in": "path",
+        "description": "Cryptocurrency payment transaction ID",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "example": "0xdaae319a0bee00f362f40ae725932c25a9b33bd33f3346ec22464361a56fcd1d"
+        }
+      },
+      "PayoutTaskId": {
+        "name": "task_id",
+        "in": "path",
+        "description": "Payout task ID",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid",
+          "example": "7028c45b-0c88-483e-b703-dd455a361b2e"
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Cryptos",
+      "x-displayName": "Available crypto",
+      "description": "Crypto currency operations"
+    },
+    {
+      "name": "Invoices",
+      "x-displayName": "Invoices",
+      "description": "Invoices operations"
+    },
+    {
+      "name": "Payouts",
+      "x-displayName": "Payouts",
+      "description": "Payouts operations"
+    },
+    {
+      "name": "Metrics",
+      "x-displayName": "Metrics",
+      "description": "Metrics operations"
+    },
+    {
+      "name": "Encryption",
+      "x-displayName": "Wallet encription",
+      "description": "Wallet operations"
+    },
+    {
+      "name": "Other",
+      "x-displayName": "Useful endpoints",
+      "description": "Other operations"
+    }
+  ],
+  "x-tagGroups": [
+    {
+      "name": "Obtain crypto address",
+      "tags": [
+        "Cryptos",
+        "Invoices"
+      ]
+    },
+    {
+      "name": "Payouts",
+      "tags": [
+        "Payouts"
+      ]
+    },
+    {
+      "name": "Security",
+      "tags": [
+        "Encryption"
+      ]
+    },
+    {
+      "name": "Other",
+      "tags": [
+        "Other",
+        "Metrics"
+      ]
+    }
+  ]
+}
