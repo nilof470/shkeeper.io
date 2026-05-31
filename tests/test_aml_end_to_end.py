@@ -1,3 +1,4 @@
+import json
 import unittest
 from datetime import datetime
 from decimal import Decimal
@@ -146,7 +147,7 @@ class AmlEndToEndTestCase(unittest.TestCase):
         }
         captured = {}
         callback_module.requests.post = lambda *args, **kwargs: captured.update(
-            kwargs["json"]
+            json.loads(kwargs["data"].decode())
         ) or self.response(202)
 
         aml_processing.process_pending_aml_checks()
