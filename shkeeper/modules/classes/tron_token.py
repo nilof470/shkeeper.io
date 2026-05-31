@@ -136,16 +136,26 @@ class TronToken(Crypto):
             raise PayoutResourceUnavailableError(
                 "TRON sidecar fee estimate unavailable"
             ) from exc
-        if response.status_code >= 500:
-            raise PayoutResourceUnavailableError(
-                f"TRON sidecar fee estimate returned HTTP {response.status_code}"
-            )
         try:
-            return response.json(parse_float=Decimal)
+            data = response.json(parse_float=Decimal)
         except ValueError as exc:
             raise PayoutResourceUnavailableError(
                 "TRON sidecar fee estimate returned invalid JSON"
             ) from exc
+        if response.status_code >= 400:
+            if isinstance(data, dict):
+                self._raise_payout_preflight_error(
+                    data,
+                    status_code=response.status_code,
+                )
+            raise PayoutResourceUnavailableError(
+                f"TRON sidecar fee estimate returned HTTP {response.status_code}"
+            )
+        if isinstance(data, dict) and (
+            data.get("status") == "error" or data.get("error")
+        ):
+            self._raise_payout_preflight_error(data)
+        return data
 
     def can_omit_fee_for_payout(self):
         return self.crypto == "USDT"
@@ -178,13 +188,15 @@ class TronToken(Crypto):
                 "TRON USDT balance check returned invalid balance"
             ) from exc
 
-    def _raise_payout_preflight_error(self, payload):
+    def _raise_payout_preflight_error(self, payload, status_code=None):
         code = payload.get("code")
         message = (
             payload.get("message")
             or payload.get("error")
             or "TRON USDT payout preflight failed"
         )
+        if status_code is not None and status_code >= 500:
+            raise PayoutResourceUnavailableError(message)
         if code == "DESTINATION_NOT_ACTIVATED":
             raise PayoutDestinationNotActivatedError(message)
         if code in {
@@ -199,6 +211,7 @@ class TronToken(Crypto):
         raise PayoutRequestError(
             message,
             code=code or "TRON_USDT_PREFLIGHT_ERROR",
+            status_code=status_code if status_code is not None else None,
         )
 
     def preflight_payout(self, destination, amount):
@@ -221,11 +234,9 @@ class TronToken(Crypto):
 
         resource_quote = quote.get("resource_quote")
         if not resource_quote:
-            if "fee" not in quote:
-                raise PayoutResourceUnavailableError(
-                    "TRON USDT fee estimate returned no fee or resource quote"
-                )
-            return
+            raise PayoutResourceUnavailableError(
+                "TRON USDT payout resource quote is unavailable"
+            )
 
         if not resource_quote.get("submit_ready"):
             self._raise_payout_preflight_error(

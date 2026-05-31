@@ -59,6 +59,44 @@ class TronTokenPayoutPreflightTestCase(unittest.TestCase):
         )
         self.assertEqual(post.call_args.kwargs["timeout"], 10)
 
+    def test_estimate_tx_fee_maps_sidecar_4xx_error(self):
+        crypto = usdt()
+
+        with patch.object(
+            tron_token.requests,
+            "post",
+            return_value=FakeResponse(
+                {
+                    "status": "error",
+                    "code": "INVALID_DESTINATION",
+                    "message": "Bad destination address",
+                },
+                status_code=400,
+            ),
+        ):
+            with self.assertRaises(PayoutRequestError) as cm:
+                crypto.estimate_tx_fee(Decimal("1.25"), address=DESTINATION)
+
+        self.assertEqual(cm.exception.code, "INVALID_DESTINATION")
+        self.assertEqual(cm.exception.status_code, 400)
+
+    def test_estimate_tx_fee_maps_sidecar_error_body(self):
+        crypto = usdt()
+
+        with patch.object(
+            tron_token.requests,
+            "post",
+            return_value=FakeResponse(
+                {
+                    "status": "error",
+                    "code": "PROVIDER_UNAVAILABLE",
+                    "message": "No energy provider is configured",
+                },
+            ),
+        ):
+            with self.assertRaises(PayoutResourceUnavailableError):
+                crypto.estimate_tx_fee(Decimal("1.25"), address=DESTINATION)
+
     def test_can_omit_fee_only_for_usdt(self):
         self.assertTrue(usdt().can_omit_fee_for_payout())
         self.assertFalse(usdc().can_omit_fee_for_payout())
@@ -148,7 +186,7 @@ class TronTokenPayoutPreflightTestCase(unittest.TestCase):
             {"address": DESTINATION},
         )
 
-    def test_preflight_allows_legacy_static_fee_response(self):
+    def test_preflight_blocks_legacy_static_fee_response(self):
         crypto = usdt()
 
         with patch.object(
@@ -159,7 +197,8 @@ class TronTokenPayoutPreflightTestCase(unittest.TestCase):
                 FakeResponse({"fee": "40"}),
             ],
         ):
-            crypto.preflight_payout(DESTINATION, Decimal("1.25"))
+            with self.assertRaises(PayoutResourceUnavailableError):
+                crypto.preflight_payout(DESTINATION, Decimal("1.25"))
 
     def test_preflight_ignores_non_usdt_tokens(self):
         crypto = usdc()
