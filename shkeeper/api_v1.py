@@ -675,6 +675,7 @@ def set_exchange_rate(crypto_name):
 
 @bp.get("/<crypto_name>/estimate-tx-fee/<amount>")
 @login_required
+@handle_request_error
 def estimate_tx_fee(crypto_name, amount):
     crypto = Crypto.instances[crypto_name]
     return crypto.estimate_tx_fee(amount, address=request.args.get("address"))

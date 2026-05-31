@@ -11,6 +11,11 @@ from flask import current_app as app
 
 from shkeeper.modules.classes.crypto import Crypto
 from shkeeper.schemas import TronAccountResponse, TronError
+from shkeeper.services.payout_errors import (
+    PayoutDestinationNotActivatedError,
+    PayoutRequestError,
+    PayoutResourceUnavailableError,
+)
 from pydantic import TypeAdapter
 
 
@@ -117,11 +122,119 @@ class TronToken(Crypto):
         return FeeDepositAccount(response["account"], Decimal(response["balance"]))
 
     def estimate_tx_fee(self, amount, **kwargs):
-        response = requests.post(
-            f"http://{self.gethost()}/{self.crypto}/calc-tx-fee/{amount}",
-            auth=self.get_auth_creds(),
-        ).json(parse_float=Decimal)
-        return response
+        params = {}
+        if kwargs.get("address"):
+            params["address"] = kwargs["address"]
+        try:
+            response = requests.post(
+                f"http://{self.gethost()}/{self.crypto}/calc-tx-fee/{amount}",
+                auth=self.get_auth_creds(),
+                params=params or None,
+                timeout=10,
+            )
+        except requests.exceptions.RequestException as exc:
+            raise PayoutResourceUnavailableError(
+                "TRON sidecar fee estimate unavailable"
+            ) from exc
+        if response.status_code >= 500:
+            raise PayoutResourceUnavailableError(
+                f"TRON sidecar fee estimate returned HTTP {response.status_code}"
+            )
+        try:
+            return response.json(parse_float=Decimal)
+        except ValueError as exc:
+            raise PayoutResourceUnavailableError(
+                "TRON sidecar fee estimate returned invalid JSON"
+            ) from exc
+
+    def can_omit_fee_for_payout(self):
+        return self.crypto == "USDT"
+
+    def _usdt_payout_balance_for_preflight(self):
+        try:
+            response = requests.post(
+                f"http://{self.gethost()}/{self.crypto}/balance",
+                auth=self.get_auth_creds(),
+                timeout=10,
+            )
+        except requests.exceptions.RequestException as exc:
+            raise PayoutResourceUnavailableError(
+                "TRON USDT balance check unavailable"
+            ) from exc
+        if response.status_code >= 400:
+            raise PayoutResourceUnavailableError(
+                f"TRON USDT balance check returned HTTP {response.status_code}"
+            )
+        try:
+            data = response.json(parse_float=Decimal)
+        except ValueError as exc:
+            raise PayoutResourceUnavailableError(
+                "TRON USDT balance check returned invalid JSON"
+            ) from exc
+        try:
+            return Decimal(data["balance"])
+        except Exception as exc:
+            raise PayoutResourceUnavailableError(
+                "TRON USDT balance check returned invalid balance"
+            ) from exc
+
+    def _raise_payout_preflight_error(self, payload):
+        code = payload.get("code")
+        message = (
+            payload.get("message")
+            or payload.get("error")
+            or "TRON USDT payout preflight failed"
+        )
+        if code == "DESTINATION_NOT_ACTIVATED":
+            raise PayoutDestinationNotActivatedError(message)
+        if code in {
+            "PAYOUT_RESOURCE_UNAVAILABLE",
+            "PROFEEX_ESTIMATE_UNAVAILABLE",
+            "PROVIDER_UNAVAILABLE",
+            "PROVIDER_FAILED",
+            "RESOURCE_READ_FAILED",
+            "RESOURCE_RECHECK_FAILED",
+        }:
+            raise PayoutResourceUnavailableError(message)
+        raise PayoutRequestError(
+            message,
+            code=code or "TRON_USDT_PREFLIGHT_ERROR",
+        )
+
+    def preflight_payout(self, destination, amount):
+        if self.crypto != "USDT":
+            return
+        balance = self._usdt_payout_balance_for_preflight()
+        if amount > balance:
+            raise PayoutRequestError(
+                f"Payout amount exceeds wallet balance: {amount} > {balance}",
+                code="INSUFFICIENT_BALANCE",
+            )
+
+        quote = self.estimate_tx_fee(amount, address=destination)
+        if not isinstance(quote, dict):
+            raise PayoutResourceUnavailableError(
+                "TRON USDT fee estimate returned invalid response"
+            )
+        if quote.get("status") == "error" or quote.get("error"):
+            self._raise_payout_preflight_error(quote)
+
+        resource_quote = quote.get("resource_quote")
+        if not resource_quote:
+            if "fee" not in quote:
+                raise PayoutResourceUnavailableError(
+                    "TRON USDT fee estimate returned no fee or resource quote"
+                )
+            return
+
+        if not resource_quote.get("submit_ready"):
+            self._raise_payout_preflight_error(
+                {
+                    "code": resource_quote.get("blocking_code"),
+                    "message": resource_quote.get("blocking_reason")
+                    or "TRON USDT payout resources are not ready",
+                }
+            )
 
     def mkpayout(self, destination, amount, fee, subtract_fee_from_amount=False):
         if self.crypto == self.network_currency and subtract_fee_from_amount:
