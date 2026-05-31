@@ -1,3 +1,4 @@
+import json
 import unittest
 from decimal import Decimal
 
@@ -190,6 +191,16 @@ class AmlCallbackPayloadTestCase(unittest.TestCase):
 
     def test_unsupported_callback_contains_unchecked_aml_payload(self):
         tx = self.make_tx()
+        db.session.add(
+            ExchangeRate(
+                crypto="BNB",
+                fiat="USD",
+                rate=Decimal("1000"),
+                fee=Decimal("0"),
+                fixed_fee=Decimal("0"),
+                fee_policy=FeeCalculationPolicy.PERCENT_FEE,
+            )
+        )
         tx.crypto = "BNB"
         db.session.commit()
 
@@ -303,9 +314,12 @@ class AmlCallbackPayloadTestCase(unittest.TestCase):
         import shkeeper.callback as callback_module
 
         original_post = callback_module.requests.post
-        callback_module.requests.post = lambda *args, **kwargs: captured.update(
-            kwargs["json"]
-        ) or Response()
+
+        def capture_post(*args, **kwargs):
+            captured.update(json.loads(kwargs["data"].decode()))
+            return Response()
+
+        callback_module.requests.post = capture_post
         try:
             self.assertTrue(send_unconfirmed_notification(utx))
         finally:
