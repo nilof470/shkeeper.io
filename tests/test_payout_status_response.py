@@ -80,6 +80,37 @@ class PayoutStatusResponseTestCase(unittest.TestCase):
         self.assertEqual(data["txids"], [])
         self.assertTrue(data["reconciliation_required"])
 
+    def test_payout_status_normalizes_external_id_lookup(self):
+        Payout.add(
+            {"dest": "TA", "amount": Decimal("1.25")},
+            "USDT",
+            task_id="task-1",
+            external_id="WW-1",
+        )
+
+        response = self.client.get(
+            "/api/v1/USDT/payout/status?external_id=%20WW-1%20",
+            headers={"X-Shkeeper-Api-Key": "api-key"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["external_id"], "WW-1")
+
+    def test_payout_status_flags_reserved_row_without_task_or_txids(self):
+        Payout.add(
+            {"dest": "TA", "amount": Decimal("1.25")},
+            "USDT",
+            external_id="WW-1",
+        )
+
+        response = self.client.get(
+            "/api/v1/USDT/payout/status?external_id=WW-1",
+            headers={"X-Shkeeper-Api-Key": "api-key"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["reconciliation_required"])
+
 
 if __name__ == "__main__":
     unittest.main()

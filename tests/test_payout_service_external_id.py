@@ -132,6 +132,27 @@ class PayoutServiceExternalIdTestCase(unittest.TestCase):
 
         payout = Payout.query.one()
         self.assertEqual(payout.task_id, "task-1")
+        self.assertIsNone(payout.error)
+
+    def test_external_id_path_marks_enqueue_pending_before_sidecar_task_id(self):
+        crypto = self.register_crypto(FakeCrypto())
+
+        def assert_pending_then_return(destination, amount, fee):
+            payout = Payout.query.filter_by(external_id="WW-1").one()
+            self.assertEqual(payout.error, "Payout enqueue pending")
+            return {"task_id": "task-1"}
+
+        crypto.on_mkpayout = assert_pending_then_return
+
+        PayoutService.single_payout(
+            "USDT",
+            {
+                "external_id": "WW-1",
+                "destination": "TA",
+                "amount": "1",
+                "fee": "0",
+            },
+        )
 
     def test_external_id_path_marks_clear_no_task_response_failed(self):
         crypto = self.register_crypto(FakeCrypto(response={"status": "error"}))
@@ -166,6 +187,63 @@ class PayoutServiceExternalIdTestCase(unittest.TestCase):
 
         self.assertEqual(Payout.query.count(), 0)
 
+    def test_direct_payout_response_without_task_id_is_accepted(self):
+        self.register_crypto(FakeCrypto(response={"result": "tx-1", "error": None}))
+
+        result = PayoutService.single_payout(
+            "USDT",
+            {
+                "destination": "TA",
+                "amount": "1",
+                "fee": "0",
+            },
+        )
+
+        payout = Payout.query.one()
+        self.assertEqual(result["result"], "tx-1")
+        self.assertIsNone(payout.task_id)
+        self.assertEqual([tx.txid for tx in payout.transactions], ["tx-1"])
+
+    def test_external_id_direct_payout_response_without_task_id_is_accepted(self):
+        self.register_crypto(FakeCrypto(response={"result": "tx-1", "error": None}))
+
+        result = PayoutService.single_payout(
+            "USDT",
+            {
+                "external_id": "WW-1",
+                "destination": "TA",
+                "amount": "1",
+                "fee": "0",
+            },
+        )
+
+        payout = Payout.query.one()
+        self.assertEqual(result["external_id"], "WW-1")
+        self.assertIsNone(payout.task_id)
+        self.assertIsNone(payout.error)
+        self.assertEqual([tx.txid for tx in payout.transactions], ["tx-1"])
+
+    def test_external_id_direct_payout_error_marks_reserved_row_failed(self):
+        self.register_crypto(
+            FakeCrypto(response={"result": None, "error": {"message": "rejected"}})
+        )
+
+        result = PayoutService.single_payout(
+            "USDT",
+            {
+                "external_id": "WW-1",
+                "destination": "TA",
+                "amount": "1",
+                "fee": "0",
+            },
+        )
+
+        payout = Payout.query.one()
+        self.assertEqual(result["external_id"], "WW-1")
+        self.assertEqual(payout.status, PayoutStatus.FAIL)
+        self.assertEqual(payout.success, "No")
+        self.assertIn("rejected", payout.error)
+
     def test_multipayout_validates_external_ids_before_sidecar_call(self):
         Payout.add({"dest": "TA", "amount": Decimal("1")}, "USDT", external_id="WW-1")
         crypto = self.register_crypto(FakeCrypto())
@@ -178,10 +256,10 @@ class PayoutServiceExternalIdTestCase(unittest.TestCase):
 
         self.assertEqual(crypto.calls, [])
 
-    def test_multipayout_rejects_duplicate_external_ids_inside_same_request(self):
+    def test_multipayout_rejects_external_id_before_sidecar_call(self):
         crypto = self.register_crypto(FakeCrypto())
 
-        with self.assertRaises(PayoutConflictError):
+        with self.assertRaises(PayoutRequestError) as cm:
             PayoutService.multiple_payout(
                 "USDT",
                 [
@@ -190,6 +268,7 @@ class PayoutServiceExternalIdTestCase(unittest.TestCase):
                 ],
             )
 
+        self.assertEqual(cm.exception.code, "MULTIPAYOUT_EXTERNAL_ID_UNSUPPORTED")
         self.assertEqual(crypto.calls, [])
 
     def test_update_from_task_marks_error_result_failed(self):

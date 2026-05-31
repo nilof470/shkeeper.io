@@ -2,7 +2,7 @@
 from decimal import Decimal
 from urllib.parse import urlparse
 from shkeeper import db
-from shkeeper.models import Payout
+from shkeeper.models import Payout, PayoutTx
 from shkeeper.modules.classes.crypto import Crypto
 from shkeeper.services.payout_errors import PayoutConflictError, PayoutRequestError
 from sqlalchemy.exc import IntegrityError
@@ -125,6 +125,51 @@ class PayoutService:
         db.session.commit()
 
     @staticmethod
+    def mark_payout_enqueue_pending(payout):
+        payout.error = "Payout enqueue pending"
+        db.session.commit()
+
+    @staticmethod
+    def clear_payout_error(payout):
+        payout.error = None
+        db.session.commit()
+
+    @staticmethod
+    def extract_task_id(res):
+        if isinstance(res, dict):
+            return res.get("task_id")
+        return None
+
+    @staticmethod
+    def extract_direct_txids(res):
+        if not isinstance(res, dict):
+            return []
+        if res.get("txids"):
+            txids = res["txids"]
+        elif res.get("txid"):
+            txids = res["txid"]
+        elif res.get("result"):
+            txids = res["result"]
+        else:
+            return []
+        if isinstance(txids, str):
+            return [txids]
+        return list(txids)
+
+    @staticmethod
+    def is_direct_payout_response(res):
+        return isinstance(res, dict) and any(
+            key in res for key in ("result", "txid", "txids", "error")
+        )
+
+    @staticmethod
+    def add_payout_txids(payout, txids):
+        for txid in PayoutService.extract_direct_txids({"txids": txids}):
+            if not any(t.txid == txid for t in payout.transactions):
+                db.session.add(PayoutTx(payout_id=payout.id, txid=txid))
+        db.session.commit()
+
+    @staticmethod
     def create_payout_record(req, crypto_name, task_id=None, txids=None):
         callback_url = req.get("callback_url")
         PayoutService.validate_callback_url(callback_url)
@@ -165,14 +210,14 @@ class PayoutService:
             amount,
             fee,
         )
-        task_id = res.get("task_id") if isinstance(res, dict) else None
-        if not task_id:
+        task_id = cls.extract_task_id(res)
+        if not task_id and not cls.is_direct_payout_response(res):
             raise PayoutRequestError(f"Payout sidecar did not return task_id: {res}")
         cls.create_payout_record(
             req,
             crypto_name,
             task_id=task_id,
-            txids=res.get("result", []),
+            txids=cls.extract_direct_txids(res),
         )
         return res
 
@@ -194,6 +239,7 @@ class PayoutService:
             raise PayoutConflictError(
                 f"Payout with this external_id already exists: {external_id}"
             ) from exc
+        cls.mark_payout_enqueue_pending(payout)
 
         try:
             res = crypto.mkpayout(
@@ -205,33 +251,41 @@ class PayoutService:
             cls.mark_payout_enqueue_unknown(payout, exc)
             raise
 
-        task_id = res.get("task_id") if isinstance(res, dict) else None
+        task_id = cls.extract_task_id(res)
+        if task_id:
+            payout.task_id = task_id
+            payout.error = None
+            db.session.commit()
+            res["external_id"] = external_id
+            return res
+
+        if cls.is_direct_payout_response(res):
+            txids = cls.extract_direct_txids(res)
+            cls.add_payout_txids(payout, txids)
+            if res.get("error") and not txids:
+                cls.mark_payout_failed(payout, res["error"])
+            else:
+                cls.clear_payout_error(payout)
+            res["external_id"] = external_id
+            return res
+
         if not task_id:
             cls.mark_payout_failed(payout, res)
             raise PayoutRequestError(f"Payout sidecar did not return task_id: {res}")
 
-        payout.task_id = task_id
-        db.session.commit()
-        res["external_id"] = external_id
-        return res
-
     @classmethod
     def validate_multipayout_before_enqueue(cls, crypto_name, payout_list):
-        seen_external_ids = set()
-        normalized_external_ids = []
         for req in payout_list:
             cls.validate_callback_url(req.get("callback_url"))
             external_id = cls.check_external_id_unique(req, crypto_name)
             if not external_id:
                 continue
-            if external_id in seen_external_ids:
-                raise PayoutConflictError(
-                    f"Duplicate external_id in payout list: {external_id}"
-                )
-            seen_external_ids.add(external_id)
-            req["external_id"] = external_id
-            normalized_external_ids.append(external_id)
-        return normalized_external_ids
+            raise PayoutRequestError(
+                "external_id is not supported for multipayout in this phase",
+                code="MULTIPAYOUT_EXTERNAL_ID_UNSUPPORTED",
+                status_code=400,
+            )
+        return []
 
     @classmethod
     def multiple_payout(cls, crypto_name, payout_list):
@@ -247,7 +301,7 @@ class PayoutService:
             payout_list,
         )
         res = crypto.multipayout(payout_list)
-        task_id = res.get("task_id") if isinstance(res, dict) else None
+        task_id = cls.extract_task_id(res)
         if not task_id:
             raise PayoutRequestError(
                 f"Multipayout sidecar did not return task_id: {res}"

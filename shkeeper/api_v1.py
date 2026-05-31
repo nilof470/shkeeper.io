@@ -422,7 +422,7 @@ def get_fee_deposit_address(crypto_name):
 @bp.get("/<crypto_name>/payout/status")
 @api_key_required
 def payout_status(crypto_name):
-    external_id = request.args.get("external_id")
+    external_id = PayoutService.normalize_external_id(request.args.get("external_id"))
     if not external_id:
         return {"error": "external_id is required"}, 400
     payout = Payout.query.filter_by(external_id=external_id, crypto=crypto_name).first()
@@ -446,7 +446,10 @@ def payout_status(crypto_name):
         "reconciliation_required": (
             payout.status.name == "IN_PROGRESS"
             and payout.task_id is None
-            and bool(payout.error)
+            and (
+                bool(payout.error)
+                or (payout.external_id is not None and not payout.transactions)
+            )
         ),
     }
     return result, 200
