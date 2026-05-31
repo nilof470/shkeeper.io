@@ -204,6 +204,26 @@ class PayoutServiceExternalIdTestCase(unittest.TestCase):
         self.assertIsNone(payout.task_id)
         self.assertEqual([tx.txid for tx in payout.transactions], ["tx-1"])
 
+    def test_direct_payout_error_without_external_id_marks_record_failed(self):
+        self.register_crypto(
+            FakeCrypto(response={"result": None, "error": {"message": "rejected"}})
+        )
+
+        result = PayoutService.single_payout(
+            "USDT",
+            {
+                "destination": "TA",
+                "amount": "1",
+                "fee": "0",
+            },
+        )
+
+        payout = Payout.query.one()
+        self.assertEqual(result["error"], {"message": "rejected"})
+        self.assertEqual(payout.status, PayoutStatus.FAIL)
+        self.assertEqual(payout.success, "No")
+        self.assertIn("rejected", payout.error)
+
     def test_external_id_direct_payout_response_without_task_id_is_accepted(self):
         self.register_crypto(FakeCrypto(response={"result": "tx-1", "error": None}))
 

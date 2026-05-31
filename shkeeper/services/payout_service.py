@@ -213,12 +213,19 @@ class PayoutService:
         task_id = cls.extract_task_id(res)
         if not task_id and not cls.is_direct_payout_response(res):
             raise PayoutRequestError(f"Payout sidecar did not return task_id: {res}")
-        cls.create_payout_record(
+        payout = cls.create_payout_record(
             req,
             crypto_name,
             task_id=task_id,
             txids=cls.extract_direct_txids(res),
         )
+        if (
+            not task_id
+            and isinstance(res, dict)
+            and res.get("error")
+            and not cls.extract_direct_txids(res)
+        ):
+            cls.mark_payout_failed(payout, res["error"])
         return res
 
     @classmethod
