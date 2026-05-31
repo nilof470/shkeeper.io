@@ -224,6 +224,46 @@ class AmlCallbackPayloadTestCase(unittest.TestCase):
         self.assertEqual(trigger["aml"]["provider_status"], "checking")
         self.assertEqual(trigger["aml"]["error_code"], "http_429")
 
+    def test_terminal_timeout_is_not_reported_as_pending(self):
+        tx = self.make_tx()
+        check = self.add_check(
+            tx,
+            decision=DepositDecision.MANUAL_REVIEW,
+            reason="aml_pending_timeout",
+        )
+        check.provider_status = "pending"
+        check.score = None
+        check.error_code = "aml_pending_timeout"
+        db.session.commit()
+
+        trigger = build_payment_notification(tx)["transactions"][0]
+
+        self.assertEqual(trigger["aml"]["checked"], False)
+        self.assertEqual(trigger["aml"]["check_status"], "timeout")
+        self.assertEqual(trigger["aml"]["reason_code"], "aml_pending_timeout")
+        self.assertEqual(trigger["aml"]["provider_status"], "pending")
+        self.assertEqual(trigger["aml"]["error_code"], "aml_pending_timeout")
+
+    def test_incomplete_result_is_not_reported_as_checking(self):
+        tx = self.make_tx()
+        check = self.add_check(
+            tx,
+            decision=DepositDecision.MANUAL_REVIEW,
+            reason="incomplete_aml_result",
+        )
+        check.provider_status = "checking"
+        check.score = None
+        check.error_code = "missing_risk_score"
+        db.session.commit()
+
+        trigger = build_payment_notification(tx)["transactions"][0]
+
+        self.assertEqual(trigger["aml"]["checked"], False)
+        self.assertEqual(trigger["aml"]["check_status"], "incomplete")
+        self.assertEqual(trigger["aml"]["reason_code"], "incomplete_aml_result")
+        self.assertEqual(trigger["aml"]["provider_status"], "checking")
+        self.assertEqual(trigger["aml"]["error_code"], "missing_risk_score")
+
     def test_static_address_partial_invoice_can_credit_trigger_transaction(self):
         tx = self.make_tx(status=InvoiceStatus.PARTIAL)
         self.add_check(tx)
