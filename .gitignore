@@ -16,3 +16,6 @@ build/
 .vscode/launch.json
 .env
 shkeeper-api.http
+.claude/
+.planning/
+.superpowers/
