@@ -18,6 +18,7 @@ from flask.json import JSONDecoder
 from flask_sqlalchemy import sqlalchemy
 from shkeeper import requests
 from shkeeper.services.payout_service import PayoutService
+from shkeeper.services.payout_errors import PayoutRequestError
 
 from shkeeper import db
 from shkeeper.auth import basic_auth_optional, login_required, api_key_required
@@ -61,6 +62,13 @@ def handle_request_error(func):
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
+        except PayoutRequestError as e:
+            app.logger.exception("Payout request rejected")
+            return {
+                "status": "error",
+                "code": e.code,
+                "message": str(e),
+            }, e.status_code
         except Exception as e:
             app.logger.exception("Payout error")
             return {"status": "error", "message": str(e)}, 500
@@ -431,6 +439,15 @@ def payout_status(crypto_name):
         "txid": payout.transactions[0].txid
         if payout.transactions and len(payout.transactions) > 0
         else None,
+        "task_id": payout.task_id,
+        "success": payout.success,
+        "error": payout.error,
+        "txids": [tx.txid for tx in payout.transactions],
+        "reconciliation_required": (
+            payout.status.name == "IN_PROGRESS"
+            and payout.task_id is None
+            and bool(payout.error)
+        ),
     }
     return result, 200
 

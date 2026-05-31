@@ -779,6 +779,10 @@ class PayoutStatus(enum.Enum):
 
 
 class Payout(db.Model):
+    __table_args__ = (
+        db.Index("uq_payout_crypto_external_id", "crypto", "external_id", unique=True),
+    )
+
     id = db.Column(db.Integer, primary_key=True)
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp(), index=True)
     updated_at = db.Column(
@@ -813,13 +817,29 @@ class Payout(db.Model):
             for payout in payouts:
                 payout.status = PayoutStatus.FAIL
                 payout.success = "No"
-                payout.error = results
+                payout.error = str(results)
             db.session.commit()
             return
-        result_by_dest = {r["dest"].lower(): r for r in results}
+        if not isinstance(results, list):
+            for payout in payouts:
+                payout.status = PayoutStatus.FAIL
+                payout.success = "No"
+                payout.error = str(results)
+            db.session.commit()
+            return
+        result_by_dest = {
+            r["dest"].lower(): r
+            for r in results
+            if isinstance(r, dict) and isinstance(r.get("dest"), str)
+        }
         for payout in payouts:
             r = result_by_dest.get(payout.dest_addr.lower())
             if not r:
+                continue
+            if r.get("status") == "error":
+                payout.status = PayoutStatus.FAIL
+                payout.success = "No"
+                payout.error = str(r)
                 continue
             txids = r.get("txids", [])
             for txid in txids:
@@ -830,6 +850,7 @@ class Payout(db.Model):
     @classmethod
     def add(cls, payout, crypto, task_id=None, external_id=None):
         app.logger.warning(f"payouts add {payout}")
+        external_id = str(external_id).strip() if external_id is not None else None
         external_id = external_id or None
         p = cls(
             dest_addr=payout["dest"],
