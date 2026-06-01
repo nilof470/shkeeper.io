@@ -5,18 +5,17 @@ SHKeeper fork. The Helm chart fork is the source of truth for Kubernetes
 manifests; this wrapper only standardizes the production command, waits for
 rollouts, and runs post-deploy verification.
 
-The chart itself lives in a separate fork project, expected next to this repo:
+The chart fork is published as a versioned OCI chart:
 
 ```text
-/opt/shkeeper.io
-/opt/shkeeper-helm-charts
+oci://ghcr.io/nilof470/helm-charts/shkeeper
+version: 1.7.28-nilof470.1
 ```
 
-If it is not present yet:
+For a private GHCR package, log Helm in once on the VPS:
 
 ```bash
-cd /opt
-git clone https://github.com/nilof470/helm-charts.git shkeeper-helm-charts
+echo "GITHUB_TOKEN_WITH_READ_PACKAGES" | helm registry login ghcr.io -u nilof470 --password-stdin
 ```
 
 The upstream `vsys-host/helm-charts` chart renders the TRON sidecar with three
@@ -28,8 +27,8 @@ The worker must be in the same pod because the TRON sidecar Redis broker is
 pod-local. Running it as a separate Deployment is unsafe unless `REDIS_HOST` is
 moved to a shared Redis service.
 
-The wrapper applies the chart fork directly. There is no post-renderer and no
-Python YAML dependency in the deploy path.
+The wrapper applies the published chart fork directly. There is no local chart
+clone, post-renderer, or Python YAML dependency in the deploy path.
 
 ## Usage
 
@@ -45,8 +44,8 @@ RELEASE=shkeeper RELEASE_NS=default APP_NS=shkeeper \
   deploy/shkeeper/upgrade.sh /root/shkeeper-values.yaml
 ```
 
-Use `CHART=/path/to/charts/shkeeper` if the chart fork is not checked out next
-to `shkeeper.io`.
+Use `CHART=/path/to/charts/shkeeper` only for local chart development. Use
+`CHART_VERSION=...` to pin a different published chart version.
 
 The wrapper:
 
@@ -60,8 +59,8 @@ The equivalent direct Helm command is:
 
 ```bash
 helm upgrade --install -n default -f /root/shkeeper-values.yaml \
-  shkeeper /opt/shkeeper-helm-charts/charts/shkeeper \
-  --atomic --timeout 300s
+  shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
+  --version 1.7.28-nilof470.1 --atomic --timeout 300s
 
 /opt/shkeeper.io/deploy/shkeeper/verify-tron-usdt-payout-worker.py \
   --namespace shkeeper \

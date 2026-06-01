@@ -58,7 +58,8 @@ class ShkeeperDeployScriptsTestCase(unittest.TestCase):
     def test_upgrade_script_uses_chart_fork_not_post_renderer(self):
         script = (DEPLOY_DIR / "upgrade.sh").read_text()
 
-        self.assertIn("shkeeper-helm-charts/charts/shkeeper", script)
+        self.assertIn("oci://ghcr.io/nilof470/helm-charts/shkeeper", script)
+        self.assertIn("CHART_VERSION", script)
         self.assertNotIn("--post-renderer", script)
         self.assertNotIn("python3 -c 'import yaml'", script)
 

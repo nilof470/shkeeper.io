@@ -13,7 +13,7 @@ a private secret store.
 Use the SHKeeper fork deployment model:
 
 - k3s on the VPS
-- Helm chart fork from `/opt/shkeeper-helm-charts/charts/shkeeper`
+- Helm chart fork from `oci://ghcr.io/nilof470/helm-charts/shkeeper`
 - custom private GHCR image for `tron-shkeeper`
 - custom private GHCR image for `ton-shkeeper` when using the TON scanner
   resilience fix
@@ -190,12 +190,11 @@ helm install kubernetes-secret-generator mittwald/kubernetes-secret-generator
 helm list -A
 ```
 
-Check out the chart fork next to `shkeeper.io`:
+Log Helm in to GHCR if the chart package is private:
 
 ```bash
-cd /opt
-git clone https://github.com/nilof470/helm-charts.git shkeeper-helm-charts
-test -f /opt/shkeeper-helm-charts/charts/shkeeper/Chart.yaml
+echo "GITHUB_TOKEN_WITH_READ_PACKAGES" | helm registry login ghcr.io -u nilof470 --password-stdin
+helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper --version 1.7.28-nilof470.1
 ```
 
 ## Namespace and Private GHCR Pull Secret
@@ -301,15 +300,11 @@ passwords, or Kubernetes secrets.
 
 ### Production Deploy Entry Point
 
-The Helm chart fork is the source of truth for Kubernetes manifests. Use the
-repo-owned deploy wrapper as the guarded production entry point: it applies the
-chart fork, waits for rollouts, and runs post-deploy verification. The wrapper
-expects the Helm chart fork to be checked out next to `shkeeper.io`:
-
-```text
-/opt/shkeeper.io
-/opt/shkeeper-helm-charts
-```
+The Helm chart fork is the source of truth for Kubernetes manifests. It is
+published as `oci://ghcr.io/nilof470/helm-charts/shkeeper` version
+`1.7.28-nilof470.1`. Use the repo-owned deploy wrapper as the guarded
+production entry point: it applies the published chart fork, waits for rollouts,
+and runs post-deploy verification.
 
 Do not deploy this fork with the upstream `vsys-host/shkeeper` chart when TRON
 USDT payout resource provisioning is enabled: upstream renders the TRON sidecar
@@ -321,14 +316,14 @@ cd /opt/shkeeper.io
 deploy/shkeeper/upgrade.sh /root/shkeeper-values.yaml
 ```
 
-The chart fork renders the TRON sidecar worker directly. There is no
-post-renderer and no PyYAML dependency. When
+The chart fork renders the TRON sidecar worker directly. There is no local chart
+clone, post-renderer, or PyYAML dependency. When
 `TRON_USDT_PAYOUT_RESOURCE_PROVISIONING_ENABLED=true`, the chart renders
 `tron-shkeeper` as `4/4 Running` with `tron-usdt-payouts` consuming
 `tron_usdt_fee_payouts`.
 
 ```bash
-test -f /opt/shkeeper-helm-charts/charts/shkeeper/Chart.yaml
+helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper --version 1.7.28-nilof470.1
 ```
 
 The direct Helm equivalent is valid only if it uses the chart fork and is
@@ -336,8 +331,8 @@ followed by the verifier:
 
 ```bash
 helm upgrade --install -n default -f /root/shkeeper-values.yaml \
-  shkeeper /opt/shkeeper-helm-charts/charts/shkeeper \
-  --atomic --timeout 300s
+  shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
+  --version 1.7.28-nilof470.1 --atomic --timeout 300s
 
 /opt/shkeeper.io/deploy/shkeeper/verify-tron-usdt-payout-worker.py \
   --namespace shkeeper \
