@@ -163,11 +163,19 @@ function validateCallback(element) {
 
 function show_est_fee() {
   let amount = document.querySelector(".fee-input").value;
+  let address = document.querySelector("#paddress").value.trim();
   if (!amount) return;
-  fetch("/api/v1/{{crypto.crypto}}/estimate-tx-fee/" + amount)
+  let params = address ? "?address=" + encodeURIComponent(address) : "";
+  fetch("/api/v1/{{crypto.crypto}}/estimate-tx-fee/" + amount + params)
     .then(response => response.json())
     .then(data => {
-      if (!data.fee) return;
+      let quote = data.resource_quote;
+      payout_resource_ready = !(data.status === "error" || data.error) && (!quote || quote.submit_ready);
+      payout_resource_error_msg = quote?.blocking_reason || data.message || data.error || "";
+      if (!data.fee) {
+        check_fee();
+        return;
+      }
       document.querySelector("#est_fee").innerText = data.fee;
       check_fee();
       console.log(data);
@@ -175,11 +183,19 @@ function show_est_fee() {
 }
 
 var not_en_trx_msg = `Not enought TRX to pay for transaction. Please top up the fee-deposit account.`;
+var payout_resource_ready = true;
+var payout_resource_error_msg = "";
 
 function check_fee() {
   let est_fee = parseFloat(document.querySelector("#est_fee").innerText);
   let fee_depos_bal = parseFloat(document.querySelector("#fee_depos_bal").innerText);
   let fee_err = document.querySelector("#fee_err");
+
+  if (!payout_resource_ready) {
+    fee_err.innerText = payout_resource_error_msg;
+    fee_err.style.display = "block";
+    return false;
+  }
 
   if (fee_depos_bal < est_fee) {
     fee_err.innerText = not_en_trx_msg;
@@ -203,6 +219,12 @@ document.querySelector(".fee-input").addEventListener("input", e => {
 });
 document.querySelector(".fee-input").addEventListener("input", delay((e) => show_est_fee(), 200));
 document.querySelector(".fee-input").addEventListener("input", check_fee);
+document.querySelector("#paddress").addEventListener("input", delay((e) => show_est_fee(), 200));
+document.querySelector(".dropdown__body").addEventListener("click", e => {
+  if (e.target.closest(".dropdown__text")) {
+    show_est_fee();
+  }
+});
 
 document.querySelector(".send-payment").addEventListener("click", e => {
 
@@ -227,7 +249,7 @@ document.querySelector(".send-payment").addEventListener("click", e => {
   }
 
   if (!check_fee()) {
-    alert(not_en_trx_msg);
+    alert(document.querySelector("#fee_err").innerText || not_en_trx_msg);
     return;
   }
 
