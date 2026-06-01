@@ -349,7 +349,7 @@ Helm release values first:
 
 ```bash
 helm list -A | grep shkeeper
-helm get values shkeeper -n shkeeper -o yaml > /root/shkeeper-values.yaml
+helm get values shkeeper -n default -o yaml > /root/shkeeper-values.yaml
 nano /root/shkeeper-values.yaml
 ```
 
