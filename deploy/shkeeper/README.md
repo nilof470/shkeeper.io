@@ -1,7 +1,9 @@
 # SHKeeper Production Deploy Wrapper
 
-This directory contains the production deploy wrapper for this SHKeeper fork.
-Use it instead of running `helm upgrade` directly on production.
+This directory contains the guarded production deploy entry point for this
+SHKeeper fork. The Helm chart fork is the source of truth for Kubernetes
+manifests; this wrapper only standardizes the production command, waits for
+rollouts, and runs post-deploy verification.
 
 The chart itself lives in a separate fork project, expected next to this repo:
 
@@ -53,6 +55,20 @@ The wrapper:
 - waits for `tron-shkeeper` when TRON is enabled;
 - verifies `tron-usdt-payouts` when
   `TRON_USDT_PAYOUT_RESOURCE_PROVISIONING_ENABLED=true`.
+
+The equivalent direct Helm command is:
+
+```bash
+helm upgrade --install -n default -f /root/shkeeper-values.yaml \
+  shkeeper /opt/shkeeper-helm-charts/charts/shkeeper \
+  --atomic --timeout 300s
+
+/opt/shkeeper.io/deploy/shkeeper/verify-tron-usdt-payout-worker.py \
+  --namespace shkeeper \
+  --deployment tron-shkeeper
+```
+
+Use the wrapper in production so the Helm command and verification do not drift.
 
 Expected TRON pod shape after deploy:
 

@@ -23,9 +23,9 @@ Environment:
   CHART         Helm chart path/ref. Default: sibling shkeeper-helm-charts fork.
   TIMEOUT       kubectl rollout timeout. Default: 300s
 
-This wrapper is the supported production deploy path for the SHKeeper fork.
-It applies the repo-owned Helm chart fork, waits for rollouts, and verifies
-the TRON USDT payout worker when payout resource provisioning is enabled.
+This is the guarded production deploy entry point for the SHKeeper fork.
+The Helm chart fork owns Kubernetes manifests; this script applies it, waits
+for rollouts, and verifies the TRON USDT payout worker when provisioning is enabled.
 EOF
 }
 

@@ -50,7 +50,7 @@ class ShkeeperDeployScriptsTestCase(unittest.TestCase):
             text=True,
         )
 
-        self.assertIn("production deploy path", result.stdout)
+        self.assertIn("production deploy entry point", result.stdout)
         self.assertIn("TRON USDT payout worker", result.stdout)
         self.assertIn("chart fork", result.stdout)
         self.assertNotIn("post-renderer", result.stdout)

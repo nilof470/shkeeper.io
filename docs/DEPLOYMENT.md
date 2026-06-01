@@ -299,10 +299,12 @@ Keep production-only values in `/root/shkeeper-values.yaml` or a private secret
 store. Do not commit real API keys, callback URLs, wallet passwords, admin
 passwords, or Kubernetes secrets.
 
-### Production deploy wrapper
+### Production Deploy Entry Point
 
-Use the repo-owned deploy wrapper for production upgrades. The wrapper expects
-the Helm chart fork to be checked out next to `shkeeper.io`:
+The Helm chart fork is the source of truth for Kubernetes manifests. Use the
+repo-owned deploy wrapper as the guarded production entry point: it applies the
+chart fork, waits for rollouts, and runs post-deploy verification. The wrapper
+expects the Helm chart fork to be checked out next to `shkeeper.io`:
 
 ```text
 /opt/shkeeper.io
@@ -327,6 +329,19 @@ post-renderer and no PyYAML dependency. When
 
 ```bash
 test -f /opt/shkeeper-helm-charts/charts/shkeeper/Chart.yaml
+```
+
+The direct Helm equivalent is valid only if it uses the chart fork and is
+followed by the verifier:
+
+```bash
+helm upgrade --install -n default -f /root/shkeeper-values.yaml \
+  shkeeper /opt/shkeeper-helm-charts/charts/shkeeper \
+  --atomic --timeout 300s
+
+/opt/shkeeper.io/deploy/shkeeper/verify-tron-usdt-payout-worker.py \
+  --namespace shkeeper \
+  --deployment tron-shkeeper
 ```
 
 If the local values file is missing or empty on the server, export the active
