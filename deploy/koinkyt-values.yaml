@@ -2,7 +2,7 @@
 #
 # Merge these values into the private /root/shkeeper-values.yaml on the target
 # server. Then deploy with the same command used for the TRON/re:Fee rollout:
-#   helm upgrade -f /root/shkeeper-values.yaml shkeeper vsys-host/shkeeper
+#   /opt/shkeeper.io/deploy/shkeeper/upgrade.sh /root/shkeeper-values.yaml
 #
 # Do not commit real API keys. Put the real KOINKYT_API_KEY only in the private
 # values file on the VPS or in a private secret store.

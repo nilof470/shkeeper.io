@@ -201,6 +201,7 @@ class TronToken(Crypto):
             raise PayoutDestinationNotActivatedError(message)
         if code in {
             "PAYOUT_RESOURCE_UNAVAILABLE",
+            "PAYOUT_WORKER_UNAVAILABLE",
             "PROFEEX_ESTIMATE_UNAVAILABLE",
             "PROVIDER_UNAVAILABLE",
             "PROVIDER_FAILED",

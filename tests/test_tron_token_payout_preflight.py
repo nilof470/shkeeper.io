@@ -161,6 +161,31 @@ class TronTokenPayoutPreflightTestCase(unittest.TestCase):
 
         self.assertEqual(cm.exception.status_code, 503)
 
+    def test_preflight_blocks_missing_payout_worker_as_503(self):
+        crypto = usdt()
+        quote = {
+            "fee": "0",
+            "resource_quote": {
+                "submit_ready": False,
+                "blocking_code": "PAYOUT_WORKER_UNAVAILABLE",
+                "blocking_reason": "TRON USDT payout worker is not ready",
+            },
+        }
+
+        with patch.object(
+            tron_token.requests,
+            "post",
+            side_effect=[
+                FakeResponse({"balance": "10.00"}),
+                FakeResponse(quote),
+            ],
+        ):
+            with self.assertRaises(PayoutResourceUnavailableError) as cm:
+                crypto.preflight_payout(DESTINATION, Decimal("1.25"))
+
+        self.assertEqual(cm.exception.code, "PAYOUT_RESOURCE_UNAVAILABLE")
+        self.assertEqual(cm.exception.status_code, 503)
+
     def test_preflight_allows_ready_resource_quote(self):
         crypto = usdt()
         quote = {
