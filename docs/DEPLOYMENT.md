@@ -190,10 +190,14 @@ helm install kubernetes-secret-generator mittwald/kubernetes-secret-generator
 helm list -A
 ```
 
-Log Helm in to GHCR if the chart package is private:
+Log Helm in to GHCR if the chart package is private. Create a GitHub token with
+`read:packages` at `https://github.com/settings/tokens/new?scopes=read:packages`.
 
 ```bash
-echo "GITHUB_TOKEN_WITH_READ_PACKAGES" | helm registry login ghcr.io -u nilof470 --password-stdin
+read -s GHCR_TOKEN
+echo "$GHCR_TOKEN" | helm registry login ghcr.io -u nilof470 --password-stdin
+unset GHCR_TOKEN
+
 helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper --version 1.7.28-nilof470.1
 ```
 
@@ -302,19 +306,14 @@ passwords, or Kubernetes secrets.
 
 The Helm chart fork is the source of truth for Kubernetes manifests. It is
 published as `oci://ghcr.io/nilof470/helm-charts/shkeeper` version
-`1.7.28-nilof470.1`. Use the repo-owned deploy wrapper as the guarded
-production entry point: it applies the published chart fork, waits for rollouts,
-and runs post-deploy verification.
+`1.7.28-nilof470.1`. Use the published OCI chart directly for production
+deploys. This keeps a new VPS deployment independent from a local chart
+checkout.
 
 Do not deploy this fork with the upstream `vsys-host/shkeeper` chart when TRON
 USDT payout resource provisioning is enabled: upstream renders the TRON sidecar
 with the base `3/3` pod shape, while this fork requires the additional
 `tron-usdt-payouts` worker container.
-
-```bash
-cd /opt/shkeeper.io
-deploy/shkeeper/upgrade.sh /root/shkeeper-values.yaml
-```
 
 The chart fork renders the TRON sidecar worker directly. There is no local chart
 clone, post-renderer, or PyYAML dependency. When
@@ -326,18 +325,29 @@ clone, post-renderer, or PyYAML dependency. When
 helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper --version 1.7.28-nilof470.1
 ```
 
-The direct Helm equivalent is valid only if it uses the chart fork and is
-followed by the verifier:
+The production deploy command is:
 
 ```bash
 helm upgrade --install -n default -f /root/shkeeper-values.yaml \
   shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
-  --version 1.7.28-nilof470.1 --atomic --timeout 300s
+  --version 1.7.28-nilof470.1 --timeout 300s
 
-/opt/shkeeper.io/deploy/shkeeper/verify-tron-usdt-payout-worker.py \
-  --namespace shkeeper \
-  --deployment tron-shkeeper
+kubectl rollout status deployment/shkeeper-deployment -n shkeeper --timeout=180s
+kubectl rollout status deployment/tron-shkeeper -n shkeeper --timeout=180s
+kubectl get pods -n shkeeper | grep tron-shkeeper
 ```
+
+Expected TRON pod shape when payout resource provisioning is enabled:
+
+```text
+tron-shkeeper ... 4/4 Running
+```
+
+Do not add `--atomic` or `--wait` to this chart upgrade. The upstream chart can
+render PVCs for disabled networks, and Kubernetes leaves those PVCs in
+`WaitForFirstConsumer` until a matching pod is scheduled. Helm's wait mode can
+therefore time out even when the SHKeeper and TRON deployments are healthy.
+Verify the specific deployments with `kubectl rollout status` instead.
 
 If the local values file is missing or empty on the server, export the active
 Helm release values first:
@@ -349,8 +359,7 @@ nano /root/shkeeper-values.yaml
 ```
 
 If `helm list -A` shows the Helm release in another namespace, use that
-namespace in `helm get values` and set `RELEASE_NS` for
-`deploy/shkeeper/upgrade.sh`.
+namespace in `helm get values` and in `helm upgrade -n ...`.
 
 Core image tags:
 
@@ -497,7 +506,7 @@ Recommended production sizing:
 - If Ethereum, BNB, and TON are all production-critical, use a larger VPS or
   split heavy sidecars onto separate infrastructure.
 
-Capacity checks after every deploy wrapper run:
+Capacity checks after every Helm upgrade:
 
 ```bash
 kubectl -n shkeeper rollout status deployment/shkeeper-deployment --timeout=180s
@@ -554,7 +563,7 @@ iostat -xz 1 5
 
 Scaling a sidecar to `0` stops processing for that network. Make the same
 choice persistent in `/root/shkeeper-values.yaml` before the next
-deploy wrapper run; otherwise Helm can recreate the deployment.
+Helm upgrade; otherwise Helm can recreate the deployment.
 
 The official chart may create `Pending` PVCs for disabled or unused networks.
 They do not contain data, but they generate repeated `WaitForFirstConsumer`
@@ -906,8 +915,9 @@ Real deposits add more calls:
 ## Install SHKeeper
 
 ```bash
-cd /opt/shkeeper.io
-deploy/shkeeper/upgrade.sh /root/shkeeper-values.yaml
+helm upgrade --install -n default -f /root/shkeeper-values.yaml \
+  shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
+  --version 1.7.28-nilof470.1 --timeout 300s
 ```
 
 Watch startup:
@@ -1062,60 +1072,44 @@ namespace, so confirm the release namespace first:
 helm list -A | grep shkeeper
 ```
 
-Update the main SHKeeper application image:
+Update the main SHKeeper application image and the TRON sidecar image:
 
 ```bash
-NEW_TAG=REPLACE_WITH_SHKEEPER_TAG
+SHKEEPER_TAG=REPLACE_WITH_SHKEEPER_TAG
+TRON_TAG=REPLACE_WITH_TRON_TAG
 
-sed -i "s|image: ghcr.io/nilof470/shkeeper.io:.*|image: ghcr.io/nilof470/shkeeper.io:${NEW_TAG}|" /root/shkeeper-values.yaml
+sed -i "s|image: ghcr.io/nilof470/shkeeper.io:.*|image: ghcr.io/nilof470/shkeeper.io:${SHKEEPER_TAG}|" /root/shkeeper-values.yaml
+sed -i "s|image: ghcr.io/nilof470/tron-shkeeper:.*|image: ghcr.io/nilof470/tron-shkeeper:${TRON_TAG}|" /root/shkeeper-values.yaml
 
-grep -n "ghcr.io/nilof470/shkeeper.io" /root/shkeeper-values.yaml
+grep -nE 'ghcr.io/nilof470/(shkeeper.io|tron-shkeeper)' /root/shkeeper-values.yaml
 
-deploy/shkeeper/upgrade.sh /root/shkeeper-values.yaml
+helm upgrade --install -n default -f /root/shkeeper-values.yaml \
+  shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
+  --version 1.7.28-nilof470.1 --timeout 300s
 ```
 
-Verify the deployed main application image:
+Verify the deployed images and rollout:
 
 ```bash
+kubectl rollout status deployment/shkeeper-deployment -n shkeeper --timeout=180s
+kubectl rollout status deployment/tron-shkeeper -n shkeeper --timeout=180s
 kubectl get deployment shkeeper-deployment -n shkeeper \
   -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
-kubectl get pods -n shkeeper
+kubectl get deployment tron-shkeeper -n shkeeper -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
+kubectl get pods -n shkeeper | grep tron-shkeeper
 ```
 
 Expected image output shape:
 
 ```text
 ghcr.io/nilof470/shkeeper.io:TAG
-```
-
-Update the TRON sidecar image:
-
-```bash
-NEW_TAG=REPLACE_WITH_TRON_TAG
-
-sed -i "s|image: ghcr.io/nilof470/tron-shkeeper:.*|image: ghcr.io/nilof470/tron-shkeeper:${NEW_TAG}|" /root/shkeeper-values.yaml
-
-grep -n "ghcr.io/nilof470/tron-shkeeper" /root/shkeeper-values.yaml
-
-deploy/shkeeper/upgrade.sh /root/shkeeper-values.yaml
-```
-
-Verify the deployed TRON image:
-
-```bash
-kubectl get deployment tron-shkeeper -n shkeeper -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
-kubectl get pods -n shkeeper
-```
-
-Expected image output shape:
-
-```text
 ghcr.io/nilof470/tron-shkeeper:TAG ghcr.io/nilof470/tron-shkeeper:TAG redis:7 ghcr.io/nilof470/tron-shkeeper:TAG
+tron-shkeeper ... 4/4 Running
 ```
 
-If `grep` does not print the expected image line before the deploy wrapper run,
-the values file does not contain that image override. Export the active release
-values and re-apply the image tag before upgrading:
+If `grep` does not print the expected image lines before the Helm upgrade, the
+values file does not contain those image overrides. Export the active release
+values and re-apply the image tags before upgrading:
 
 ```bash
 helm get values shkeeper -n default -o yaml > /root/shkeeper-values.yaml
@@ -1154,15 +1148,17 @@ ton_shkeeper:
     MIN_TOKEN_TRANSFER_THRESHOLD: "5"
 ```
 
-Apply the upgrade through the production wrapper. This matters even when only
+Apply the upgrade through the published chart fork. This matters even when only
 the TON image changed, because Helm renders the whole release and must use the
 chart fork that includes the TRON USDT payout worker:
 
 ```bash
 helm list -A | grep shkeeper
 
-cd /opt/shkeeper.io
-deploy/shkeeper/upgrade.sh /root/shkeeper-values.yaml
+helm upgrade --install -n default -f /root/shkeeper-values.yaml \
+  shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
+  --version 1.7.28-nilof470.1 --timeout 300s
+
 kubectl rollout status deployment/ton-shkeeper -n shkeeper --timeout=180s
 ```
 

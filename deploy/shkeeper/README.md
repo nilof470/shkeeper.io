@@ -49,18 +49,22 @@ Use `CHART=/path/to/charts/shkeeper` only for local chart development. Use
 
 The wrapper:
 
-- runs `helm upgrade --install --atomic` against the chart fork;
+- runs `helm upgrade --install` against the chart fork without Helm wait mode;
 - waits for `shkeeper-deployment`;
 - waits for `tron-shkeeper` when TRON is enabled;
 - verifies `tron-usdt-payouts` when
   `TRON_USDT_PAYOUT_RESOURCE_PROVISIONING_ENABLED=true`.
+
+The chart is not upgraded with `--atomic` or `--wait`: the upstream chart can
+render unused PVCs that stay in `WaitForFirstConsumer`, which makes Helm wait
+time out even when the relevant deployments are healthy.
 
 The equivalent direct Helm command is:
 
 ```bash
 helm upgrade --install -n default -f /root/shkeeper-values.yaml \
   shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
-  --version 1.7.28-nilof470.1 --atomic --timeout 300s
+  --version 1.7.28-nilof470.1 --timeout 300s
 
 /opt/shkeeper.io/deploy/shkeeper/verify-tron-usdt-payout-worker.py \
   --namespace shkeeper \

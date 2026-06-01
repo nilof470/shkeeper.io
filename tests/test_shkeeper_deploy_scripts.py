@@ -60,6 +60,8 @@ class ShkeeperDeployScriptsTestCase(unittest.TestCase):
 
         self.assertIn("oci://ghcr.io/nilof470/helm-charts/shkeeper", script)
         self.assertIn("CHART_VERSION", script)
+        self.assertNotIn("--atomic", script)
+        self.assertNotIn("--wait", script)
         self.assertNotIn("--post-renderer", script)
         self.assertNotIn("python3 -c 'import yaml'", script)
 

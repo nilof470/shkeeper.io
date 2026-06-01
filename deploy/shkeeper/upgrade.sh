@@ -67,10 +67,10 @@ fi
 echo "==> Helm upgrade: release=$RELEASE release_ns=$RELEASE_NS chart=$CHART values=$VALUES_FILE"
 if [ "$CHART_IS_LOCAL" = true ] || [ -z "$CHART_VERSION" ]; then
     helm upgrade --install -n "$RELEASE_NS" -f "$VALUES_FILE" "$RELEASE" "$CHART" \
-        --atomic --timeout "$TIMEOUT"
+        --timeout "$TIMEOUT"
 else
     helm upgrade --install -n "$RELEASE_NS" -f "$VALUES_FILE" "$RELEASE" "$CHART" \
-        --version "$CHART_VERSION" --atomic --timeout "$TIMEOUT"
+        --version "$CHART_VERSION" --timeout "$TIMEOUT"
 fi
 
 echo "==> Waiting for main SHKeeper deployment"
