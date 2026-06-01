@@ -129,6 +129,13 @@ def create_app(test_config=None):
         API_SPEC_OPTIONS=sc.API_SPEC_OPTIONS,
     )
 
+    if test_config is None:
+        # load the instance config, if it exists, when not testing
+        app.config.from_pyfile("config.py", silent=True)
+    else:
+        # load the test config if passed in
+        app.config.update(test_config)
+
     api = Api(app)
     app.extensions["smorest"] = api
 
@@ -140,13 +147,6 @@ def create_app(test_config=None):
     from shkeeper.wallet import bp_wallet
     api.register_blueprint(bp_wallet)
     api.register_blueprint(blp_v1)
-
-    if test_config is None:
-        # load the instance config, if it exists, when not testing
-        app.config.from_pyfile("config.py", silent=True)
-    else:
-        # load the test config if passed in
-        app.config.update(test_config)
 
     # ensure the instance folder exists
     try:

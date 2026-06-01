@@ -1,4 +1,5 @@
 import traceback
+from decimal import Decimal
 from os import environ
 from concurrent.futures import ThreadPoolExecutor
 from operator import itemgetter

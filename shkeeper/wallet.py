@@ -55,6 +55,7 @@ prometheus_client.REGISTRY.unregister(prometheus_client.PLATFORM_COLLECTOR)
 prometheus_client.REGISTRY.unregister(prometheus_client.PROCESS_COLLECTOR)
 
 bp_wallet = SmorestBlueprint("wallet", __name__)
+bp = bp_wallet
 
 
 def get_crypto_label(crypto_code: str) -> str:
