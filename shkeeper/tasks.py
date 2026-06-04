@@ -31,6 +31,27 @@ def task_send_payout_callback_notifier():
             return
         callback.send_payout_callback_notifier()
 
+
+def run_payout_execution_reconciler(batch_size=50, client=None):
+    from shkeeper.services.payout_execution_reconciler import (
+        PayoutExecutionReconciler,
+    )
+
+    return PayoutExecutionReconciler.dispatch_ready(
+        client=client,
+        batch_size=batch_size,
+    )
+
+
+def run_payout_callback_dispatcher(batch_size=50, deliverer=None):
+    from shkeeper.services.payout_callback_outbox import PayoutCallbackOutbox
+
+    return PayoutCallbackOutbox.dispatch_due_events(
+        batch_size=batch_size,
+        deliverer=deliverer,
+    )
+
+
 @scheduler.task("interval", id="payout", seconds=60)
 def task_payout():
     scheduler.app.logger.info(f"[Autopayout] Task started")

@@ -5,6 +5,7 @@ from shkeeper import db
 from shkeeper.models import Payout, PayoutTx
 from shkeeper.modules.classes.crypto import Crypto
 from shkeeper.services.payout_errors import PayoutConflictError, PayoutRequestError
+from shkeeper.services.payout_rail_catalog import legacy_spend_guard_context
 from sqlalchemy.exc import IntegrityError
 
 
@@ -79,6 +80,11 @@ class PayoutService:
 
     @staticmethod
     def validate_positive_amount(amount):
+        if not amount.is_finite():
+            raise PayoutRequestError(
+                "Payout amount should be a finite decimal number",
+                code="INVALID_AMOUNT",
+            )
         if amount <= 0:
             raise PayoutRequestError(
                 "Payout amount should be a positive number",
@@ -187,29 +193,43 @@ class PayoutService:
         )
 
     @classmethod
-    def single_payout(cls, crypto_name, req):
+    def single_payout(
+        cls,
+        crypto_name,
+        req,
+        *,
+        spend_origin="manual_admin",
+        operator_id=None,
+        audit_reason="legacy admin payout",
+    ):
         crypto = cls.get_crypto(crypto_name)
-        external_id = cls.check_external_id_unique(req, crypto_name)
-        cls.validate_callback_url(req.get("callback_url"))
-        amount = cls.parse_amount(req)
-        cls.validate_positive_amount(amount)
-        cls.preflight_payout(crypto, req)
-        fee = cls.get_request_fee(crypto, req)
+        with legacy_spend_guard_context(
+            crypto_name,
+            spend_origin=spend_origin,
+            operator_id=operator_id,
+            audit_reason=audit_reason,
+        ):
+            external_id = cls.check_external_id_unique(req, crypto_name)
+            cls.validate_callback_url(req.get("callback_url"))
+            amount = cls.parse_amount(req)
+            cls.validate_positive_amount(amount)
+            cls.preflight_payout(crypto, req)
+            fee = cls.get_request_fee(crypto, req)
 
-        if external_id:
-            return cls._single_payout_with_reserved_external_id(
-                crypto_name,
-                crypto,
-                req,
+            if external_id:
+                return cls._single_payout_with_reserved_external_id(
+                    crypto_name,
+                    crypto,
+                    req,
+                    fee,
+                    external_id,
+                )
+
+            res = crypto.mkpayout(
+                cls.get_destination(req),
+                amount,
                 fee,
-                external_id,
             )
-
-        res = crypto.mkpayout(
-            cls.get_destination(req),
-            amount,
-            fee,
-        )
         task_id = cls.extract_task_id(res)
         if not task_id and not cls.is_direct_payout_response(res):
             raise PayoutRequestError(f"Payout sidecar did not return task_id: {res}")
@@ -295,19 +315,33 @@ class PayoutService:
         return []
 
     @classmethod
-    def multiple_payout(cls, crypto_name, payout_list):
+    def multiple_payout(
+        cls,
+        crypto_name,
+        payout_list,
+        *,
+        spend_origin="manual_admin",
+        operator_id=None,
+        audit_reason="legacy admin multipayout",
+    ):
         if not isinstance(payout_list, list):
             raise PayoutRequestError(
                 "Expected an array of payouts",
                 code="INVALID_PAYOUT_LIST",
-            )
+        )
 
         crypto = cls.get_crypto(crypto_name)
-        normalized_external_ids = cls.validate_multipayout_before_enqueue(
+        with legacy_spend_guard_context(
             crypto_name,
-            payout_list,
-        )
-        res = crypto.multipayout(payout_list)
+            spend_origin=spend_origin,
+            operator_id=operator_id,
+            audit_reason=audit_reason,
+        ):
+            normalized_external_ids = cls.validate_multipayout_before_enqueue(
+                crypto_name,
+                payout_list,
+            )
+            res = crypto.multipayout(payout_list)
         task_id = cls.extract_task_id(res)
         if not task_id:
             raise PayoutRequestError(

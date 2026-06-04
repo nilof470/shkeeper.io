@@ -1,4 +1,4 @@
-from marshmallow import Schema, fields
+from marshmallow import Schema, fields, validate
 
 
 class ErrorSchema(Schema):
@@ -457,7 +457,7 @@ class DecryptionKeyErrorSchema(Schema):
 class DecryptionKeyFormSchema(Schema):
     key = fields.String(
         description="The decryption key to unlock the wallet",
-        example="asdfasfasgasgasgasgdeagweg",
+        example="YOUR_DECRYPTION_KEY",
     )
 
 
@@ -505,3 +505,194 @@ class PayoutStatusResponseSchema(Schema):
 
 class PayoutStatusErrorSchema(Schema):
     error = fields.String(example="Payout not found", description="Error message")
+
+
+class PayoutExecutionRequestSchema(Schema):
+    external_id = fields.String(
+        required=True,
+        example="W123456789",
+        description=(
+            "Immutable consumer payout request id. It is unique inside the "
+            "authenticated payout consumer and is used as the idempotency key."
+        ),
+    )
+    asset = fields.String(
+        required=True,
+        validate=validate.OneOf(["USDT"]),
+        example="USDT",
+        description="Payout execution asset. The current service contract supports USDT.",
+    )
+    network = fields.String(
+        required=True,
+        validate=validate.OneOf(["TRON", "TON", "ETH"]),
+        example="TRON",
+        description="Blockchain rail for the USDT payout.",
+    )
+    amount = fields.String(
+        required=True,
+        example="25.000000",
+        description=(
+            "Positive decimal string in USDT units. Accepted values are "
+            "canonicalized to exactly 6 decimal places."
+        ),
+    )
+    destination = fields.String(
+        required=True,
+        example="TQZL6tWjV3L1y7mK7Q9...",
+        description="Destination wallet address for the selected network.",
+    )
+
+
+class PayoutExecutionResponseSchema(Schema):
+    status = fields.String(
+        example="ACCEPTED",
+        description="Response marker. Submit returns ACCEPTED; status lookup returns OK.",
+    )
+    consumer = fields.String(example="merchant-app")
+    execution_id = fields.Integer(example=123)
+    sidecar_execution_id = fields.String(allow_none=True, example=None)
+    external_id = fields.String(example="W123456789")
+    contract_version = fields.String(example="usdt-payout-execution-v1")
+    event_version = fields.Integer(example=1)
+    state_transition_id = fields.String(
+        example="5a383116-5f69-493f-b4e2-8b5c948c5d5e"
+    )
+    occurred_at = fields.String(example="2026-06-04T08:10:00Z")
+    updated_at = fields.String(allow_none=True, example="2026-06-04T08:10:00Z")
+    asset = fields.String(example="USDT")
+    network = fields.String(example="TRON")
+    crypto_id = fields.String(example="USDT")
+    sidecar_symbol = fields.String(example="USDT")
+    payout_queue = fields.String(example="tron_usdt_fee_payouts")
+    source_wallet_ref = fields.String(example="fee_deposit")
+    state = fields.String(
+        example="CREATED",
+        description=(
+            "Monotonic SHKeeper payout state. Known values include CREATED, "
+            "PREFLIGHTED, ENQUEUEING, ENQUEUED, BROADCAST, CONFIRMED, "
+            "FAILED_PRE_BROADCAST, FAILED_CHAIN_TERMINAL, "
+            "RECONCILIATION_REQUIRED, MANUAL_REVIEW, SAFE_FOR_MANUAL_PAYOUT, "
+            "MANUAL_PAYOUT_PENDING, and MANUAL_PAYOUT_COMPLETED."
+        ),
+    )
+    failure_class = fields.String(allow_none=True, example=None)
+    amount = fields.String(example="25.000000")
+    destination = fields.String(example="TQZL6tWjV3L1y7mK7Q9...")
+    callback_endpoint_id = fields.String(example="merchant-app-main")
+    request_hash = fields.String(
+        example="0e6f8d2f9f0accc1b67d7c7b4e7e2e0a7a9b2d0c..."
+    )
+    sidecar_payload_hash = fields.String(
+        example="2dd4512a18b9d64cb35a0c4f00d9ec4e1c3b..."
+    )
+    sidecar_state = fields.String(allow_none=True, example=None)
+    sidecar_state_version = fields.Integer(allow_none=True, example=None)
+    sidecar_state_updated_at = fields.String(allow_none=True, example=None)
+    sidecar_status_hash = fields.String(allow_none=True, example=None)
+    sidecar_status_observed_at = fields.String(allow_none=True, example=None)
+    sidecar_evidence = fields.Dict(example={})
+    txids = fields.List(fields.String(), example=[])
+    message_hashes = fields.List(fields.String(), example=[])
+    error_code = fields.String(allow_none=True, example=None)
+    error_message = fields.String(allow_none=True, example=None)
+    reconciliation_required = fields.Boolean(example=False)
+    resolution_status = fields.String(example="UNRESOLVED")
+    resolution_evidence = fields.Dict(example={})
+    resolution_evidence_hash = fields.String(allow_none=True, example=None)
+    resolution_operator_note = fields.String(allow_none=True, example=None)
+    resolved_by = fields.String(allow_none=True, example=None)
+    resolved_at = fields.String(allow_none=True, example=None)
+
+
+class PayoutManualResolutionRequestSchema(Schema):
+    resolution_status = fields.String(
+        required=True,
+        validate=validate.OneOf(
+            [
+                "SAFE_FOR_MANUAL_PAYOUT",
+                "CHAIN_BROADCAST_FOUND",
+                "MANUAL_PAYOUT_PENDING",
+                "MANUAL_PAYOUT_COMPLETED",
+                "CANCELLED_PRE_BROADCAST",
+            ]
+        ),
+        example="SAFE_FOR_MANUAL_PAYOUT",
+        description="Operator resolution action for an execution that needs review.",
+    )
+    operator_note = fields.String(
+        required=False,
+        allow_none=True,
+        example="negative chain evidence checked",
+        description="Operator note stored with the audit row.",
+    )
+    evidence = fields.Dict(
+        required=True,
+        description=(
+            "Structured technical evidence for the resolution. SHKeeper validates "
+            "execution identity, last known state, source wallet, checked sources, "
+            "chain search range, and action-specific tx or negative evidence. "
+            "Business amount policies belong to the consuming application."
+        ),
+        example={
+            "network": "TRON",
+            "asset": "USDT",
+            "execution_id": 123,
+            "external_id": "W123456789",
+            "destination": "TQZL6tWjV3L1y7mK7Q9...",
+            "amount": "25.000000",
+            "last_state": "RECONCILIATION_REQUIRED",
+            "last_sidecar_state": "RECONCILIATION_REQUIRED",
+            "source_wallet": "fee_deposit",
+            "token_contract": "TRC20-USDT",
+            "checked_sources": ["tron-fullnode", "tron-indexer"],
+            "searched_block_range": {"from": 100, "to": 200},
+            "matching_transfer_found": False,
+            "pending_original_artifact": False,
+        },
+    )
+
+
+class PayoutExecutionErrorSchema(Schema):
+    status = fields.String(example="error")
+    code = fields.String(example="PAYOUT_EXECUTION_CONFLICT")
+    message = fields.String(example="Payout execution external_id already exists")
+
+
+class PayoutExecutionCallbackEventSchema(Schema):
+    event_id = fields.String(example="f6a491c4-9f5d-4a5b-87f5-f5a5d7e75688")
+    event_version = fields.Integer(example=2)
+    state_transition_id = fields.String(
+        example="d6505bf7-d25e-47cf-a64d-9e544d9f2301"
+    )
+    occurred_at = fields.String(example="2026-06-04T08:11:00.000000Z")
+    consumer = fields.String(example="merchant-app")
+    execution_id = fields.Integer(example=123)
+    sidecar_execution_id = fields.String(allow_none=True, example="123")
+    external_id = fields.String(example="W123456789")
+    asset = fields.String(example="USDT")
+    network = fields.String(example="TRON")
+    amount = fields.String(example="25.000000")
+    destination = fields.String(example="TQZL6tWjV3L1y7mK7Q9...")
+    previous_state = fields.String(allow_none=True, example="ENQUEUED")
+    state = fields.String(example="BROADCAST")
+    failure_class = fields.String(allow_none=True, example=None)
+    txids = fields.List(
+        fields.String(),
+        example=["4c32969220743644e3480d96e95a423d351049ac6296b8315103225709881ae3"],
+    )
+    message_hashes = fields.List(fields.String(), example=[])
+    error_code = fields.String(allow_none=True, example=None)
+    error_message = fields.String(allow_none=True, example=None)
+    reconciliation_required = fields.Boolean(example=False)
+    callback_endpoint_id = fields.String(example="merchant-app-main")
+    request_hash = fields.String(example="0e6f8d2f9f0accc1b67d7c7b4e7e2e0a7...")
+    sidecar_payload_hash = fields.String(example="2dd4512a18b9d64cb35a0c4f00...")
+    sidecar_status_hash = fields.String(allow_none=True, example=None)
+    sidecar_status_observed_at = fields.String(allow_none=True, example=None)
+    sidecar_evidence = fields.Dict(example={})
+    resolution_status = fields.String(example="UNRESOLVED")
+    resolution_evidence = fields.Dict(example={})
+    resolution_evidence_hash = fields.String(allow_none=True, example=None)
+    resolution_operator_note = fields.String(allow_none=True, example=None)
+    resolved_by = fields.String(allow_none=True, example=None)
+    resolved_at = fields.String(allow_none=True, example=None)

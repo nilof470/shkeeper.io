@@ -1,8 +1,19 @@
 import os
+import tempfile
 import unittest
+
+import sqlalchemy as sa
 
 from shkeeper import create_app, db, scheduler
 from shkeeper.modules.classes.crypto import Crypto
+from shkeeper.models import (
+    PayoutAuthNonce,
+    PayoutCallbackEvent,
+    PayoutExecution,
+    PayoutExecutionResolutionAudit,
+    PayoutRail,
+    User,
+)
 
 
 class HealthzTestCase(unittest.TestCase):
@@ -49,6 +60,61 @@ class HealthzTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), {"status": "ok"})
+
+    def test_payout_execution_reconciler_cli_command_is_registered(self):
+        self.assertIn("payout-execution-reconciler", self.app.cli.commands)
+        self.assertIn("payout-callback-dispatcher", self.app.cli.commands)
+
+    def test_existing_database_runs_migrations_before_create_all(self):
+        if scheduler.running:
+            scheduler.shutdown(wait=False)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = os.path.join(tmpdir, "legacy.sqlite")
+            uri = f"sqlite:///{db_path}"
+            legacy_app = create_app(
+                {
+                    "TESTING": True,
+                    "SQLALCHEMY_DATABASE_URI": uri,
+                    "SQLALCHEMY_TRACK_MODIFICATIONS": False,
+                    "SESSION_TYPE": "filesystem",
+                }
+            )
+            if scheduler.running:
+                scheduler.shutdown(wait=False)
+            with legacy_app.app_context():
+                for model in (
+                    PayoutAuthNonce,
+                    PayoutCallbackEvent,
+                    PayoutExecutionResolutionAudit,
+                    PayoutExecution,
+                    PayoutRail,
+                ):
+                    model.__table__.drop(db.engine, checkfirst=True)
+                db.session.execute(sa.text("DELETE FROM alembic_version"))
+                db.session.execute(
+                    sa.text(
+                        "INSERT INTO alembic_version (version_num) "
+                        "VALUES ('20260529_payout_external_id_unique')"
+                    )
+                )
+                if not User.query.filter_by(username="admin").first():
+                    db.session.add(User(username="admin"))
+                db.session.commit()
+
+            upgraded_app = create_app(
+                {
+                    "TESTING": True,
+                    "SQLALCHEMY_DATABASE_URI": uri,
+                    "SQLALCHEMY_TRACK_MODIFICATIONS": False,
+                    "SESSION_TYPE": "filesystem",
+                }
+            )
+            if scheduler.running:
+                scheduler.shutdown(wait=False)
+            with upgraded_app.app_context():
+                table_names = set(sa.inspect(db.engine).get_table_names())
+                self.assertIn("payout_rail", table_names)
+                self.assertIn("payout_execution", table_names)
 
 
 if __name__ == "__main__":

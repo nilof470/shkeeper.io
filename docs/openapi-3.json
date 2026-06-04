@@ -1,9 +1,9 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "SHKeeper API - Grither Pay fork",
-    "description": "# Introduction\nSHKeeper - is an open-source, self-hosted cryptocurrency payment processor. It uniquely serves as both a gateway and a merchant, enabling you to accept payments in various cryptocurrencies without fees and intermediaries.\n\n# Authentication\nYou can authenticate either via Basic Auth or an API key depending from endpoint requirement. You can generate or view an API key in the SHKeeper UI under `Wallets` -> `Manage` -> `API key`, the API key is the same for each wallet. Basic HTTP credentials it's your SHKeeper UI user and password. For metrics endpoints using separate user and password specified in `METRICS_USERNAME`, `METRICS_PASSWORD` environment variables, with default values `shkeeper`,`shkeeper`.  You can see the required authentication on the API docs at the top of each endpoint under `AUTHORIZATIONS`.\n\n<!-- Redoc-Inject: <security-definitions> -->\n\n# Grither Pay fork notes\nThis fork keeps SHKeeper as a payment fact source. Current `build_payment_notification()` output includes invoice and transaction facts plus optional AML enrichment facts. Business decisions such as credit, manual review, reject, or hold are made by Grither Pay, not by SHKeeper.\n\nIn current callback transaction objects, use `aml.checked`, `aml.supported`, `aml.check_status`, `aml.reason_code`, `aml.score`, `aml.signals`, and `aml.policy` as inputs for Grither Pay decisioning. `aml.provider_status` is the raw AML provider or sidecar status and can differ from normalized `aml.check_status`.",
-    "version": "2.1.47-grither-pay",
+    "title": "SHKeeper API",
+    "description": "# Introduction\nSHKeeper - is an open-source, self-hosted cryptocurrency payment processor. It uniquely serves as both a gateway and a merchant, enabling you to accept payments in various cryptocurrencies without fees and intermediaries.\n\n# Authentication\nYou can authenticate either via Basic Auth or an API key depending from endpoint requirement. You can generate or view an API key in the SHKeeper UI under `Wallets` -> `Manage` -> `API key`, the API key is the same for each wallet. Basic HTTP credentials are your SHKeeper UI user and password. For metrics endpoints use `METRICS_USERNAME` and `METRICS_PASSWORD`, with default values `shkeeper` and `shkeeper`.\n\n<!-- Redoc-Inject: <security-definitions> -->\n\n# Integration Boundary\nSHKeeper emits payment and payout execution facts. Customer-facing business decisions such as credit, manual review, reject, hold, withdrawal eligibility, and amount policy are made by the consuming application, not by SHKeeper. Optional AML enrichment is informational evidence for that upstream policy decision.",
+    "version": "2.1.47",
     "contact": {
       "email": "support@shkeeper.io",
       "url": "https://shkeeper.io"
@@ -16,10 +16,9 @@
       "name": "GPL-3.0",
       "url": "https://github.com/vsys-host/shkeeper.io?tab=GPL-3.0-1-ov-file#readme"
     },
-    "x-fork": {
-      "name": "grither-pay-shkeeper",
-      "callback_contract": "payment_facts_plus_aml_enrichment",
-      "business_decisions": "externalized_to_grither_pay"
+    "x-shkeeper-integration": {
+      "callback_contract": "payment_facts_plus_optional_aml_enrichment",
+      "business_decisions": "externalized_to_consuming_application"
     }
   },
   "servers": [
@@ -129,7 +128,7 @@
           {
             "lang": "cURL",
             "label": "CLI",
-            "source": "curl --location --request POST 'https://demo.shkeeper.io/api/v1/ETH-USDC/payment_request' \\\n--header 'X-Shkeeper-Api-Key: fs9GYTyNdkjPHX36' \\\n--header 'Content-Type: application/json' \\\n--data-raw '{\"external_id\":107,\"fiat\":\"USD\",\"amount\":\"18.25\",\"callback_url\":\"http://localhost/?wc-api=shkeeper-callback\"}'\n"
+            "source": "curl --location --request POST 'https://demo.shkeeper.io/api/v1/ETH-USDC/payment_request' \\\n--header 'X-Shkeeper-Api-Key: YOUR_API_KEY' \\\n--header 'Content-Type: application/json' \\\n--data-raw '{\"external_id\":107,\"fiat\":\"USD\",\"amount\":\"18.25\",\"callback_url\":\"http://localhost/?wc-api=shkeeper-callback\"}'\n"
           }
         ],
         "parameters": [
@@ -215,7 +214,7 @@
           "onPayment": {
             "{$request.callback_url}": {
               "post": {
-                "description": "The callback is sent to the specified `callback_url` provided during invoice creation. SHKeeper can send an unconfirmed transaction callback first, and later sends a confirmed payment callback after the transaction reaches the required confirmation state. For confirmed payment callbacks, SHKeeper sends a notification for each transaction related to the invoice, even if the invoice is already in `PAID`/`OVERPAID` status. The transaction that triggered the confirmed callback is marked with `trigger=true`.\n\nCurrent Grither Pay fork callbacks contain payment facts and optional AML enrichment facts only. Grither Pay should decide credit/manual review/reject using its own policy and the `aml` object on the trigger transaction. Use normalized `aml.checked`, `aml.supported`, `aml.check_status`, and `aml.reason_code` for decisioning; treat `aml.provider_status` as raw provider state. Unconfirmed callbacks never include AML enrichment and should not be used as a final credit decision.",
+                "description": "The callback is sent to the specified `callback_url` provided during invoice creation. SHKeeper can send an unconfirmed transaction callback first, and later sends a confirmed payment callback after the transaction reaches the required confirmation state. For confirmed payment callbacks, SHKeeper sends a notification for each transaction related to the invoice, even if the invoice is already in `PAID`/`OVERPAID` status. The transaction that triggered the confirmed callback is marked with `trigger=true`.\n\nCurrent callbacks contain payment facts and optional AML enrichment facts only. The consuming application should decide credit/manual review/reject using its own policy and the `aml` object on the trigger transaction. Use normalized `aml.checked`, `aml.supported`, `aml.check_status`, and `aml.reason_code` for decisioning; treat `aml.provider_status` as raw provider state. Unconfirmed callbacks never include AML enrichment and should not be used as a final credit decision.",
                 "operationId": "CallbackInvoicePayment",
                 "summary": "Received payment transaction",
                 "parameters": [
@@ -226,7 +225,7 @@
                     "description": "HTTP header to authenticate and validate by your system.",
                     "schema": {
                       "type": "string",
-                      "example": "fs9GYTyNdkjPHX36"
+                      "example": "YOUR_API_KEY"
                     }
                   }
                 ],
@@ -290,7 +289,7 @@
           {
             "lang": "cURL",
             "label": "CLI",
-            "source": "curl --location --request GET 'https://demo.shkeeper.io/api/v1/invoices/233822' \\\n--header 'X-Shkeeper-Api-Key: fs9GYTyNdkjPHX36'\n"
+            "source": "curl --location --request GET 'https://demo.shkeeper.io/api/v1/invoices/233822' \\\n--header 'X-Shkeeper-Api-Key: YOUR_API_KEY'\n"
           }
         ],
         "operationId": "getInvoiceByExternalId",
@@ -337,7 +336,7 @@
           {
             "lang": "cURL",
             "label": "CLI",
-            "source": "curl --location --request GET 'https://demo.shkeeper.io/api/v1/ETH-USDC/addresses' \\\n--header 'X-Shkeeper-Api-Key: fs9GYTyNdkjPHX36'\n"
+            "source": "curl --location --request GET 'https://demo.shkeeper.io/api/v1/ETH-USDC/addresses' \\\n--header 'X-Shkeeper-Api-Key: YOUR_API_KEY'\n"
           }
         ],
         "operationId": "getAddressesByCryptoName",
@@ -387,7 +386,7 @@
           {
             "lang": "cURL",
             "label": "CLI",
-            "source": "curl --location --request GET 'https://demo.shkeeper.io/api/v1/ETH-USDC/addresses' \\\n--header 'X-Shkeeper-Api-Key: fs9GYTyNdkjPHX36'\n"
+            "source": "curl --location --request GET 'https://demo.shkeeper.io/api/v1/ETH-USDC/addresses' \\\n--header 'X-Shkeeper-Api-Key: YOUR_API_KEY'\n"
           }
         ],
         "operationId": "getTransactionsByCryptoNameAndAddr",
@@ -437,7 +436,7 @@
           {
             "lang": "cURL",
             "label": "CLI",
-            "source": "curl --location --request GET 'https://demo.shkeeper.io/api/v1/tx-info/0xdaae319a0bee00f362f40ae725932c25a9b33bd33f3346ec22464361a56fcd1d/233822' \\\n--header 'X-Shkeeper-Api-Key: fs9GYTyNdkjPHX36'\n"
+            "source": "curl --location --request GET 'https://demo.shkeeper.io/api/v1/tx-info/0xdaae319a0bee00f362f40ae725932c25a9b33bd33f3346ec22464361a56fcd1d/233822' \\\n--header 'X-Shkeeper-Api-Key: YOUR_API_KEY'\n"
           }
         ],
         "operationId": "getTransactionInfoByTxidAndExternalId",
@@ -482,7 +481,7 @@
           {
             "lang": "cURL",
             "label": "CLI",
-            "source": "curl --location --request POST 'https://demo.shkeeper.io/api/v1/decryption-key' \\\n--header 'X-Shkeeper-Api-Key: fs9GYTyNdkjPHX36' \\\n--form 'key=\"asdfasfasgasgasgasgdeagweg\"'\n"
+            "source": "curl --location --request POST 'https://demo.shkeeper.io/api/v1/decryption-key' \\\n--header 'X-Shkeeper-Api-Key: YOUR_API_KEY' \\\n--form 'key=\"YOUR_DECRYPTION_KEY\"'\n"
           }
         ],
         "requestBody": {
@@ -925,6 +924,406 @@
           }
         }
       }
+    },
+    "/api/v1/payout-executions": {
+      "post": {
+        "responses": {
+          "202": {
+            "description": "Execution accepted or idempotent existing execution returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutExecutionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid payout request or disabled/unsupported rail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutExecutionError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown payout auth headers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutExecutionError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid signature, replayed nonce, expired timestamp, or forbidden rail key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutExecutionError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The external_id already exists with a different canonical request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutExecutionError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Enabled rail is not dispatchable or callback endpoint is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutExecutionError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutExecutionError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create payout execution",
+        "tags": [
+          "Payouts"
+        ],
+        "operationId": "CreatePayoutExecution",
+        "description": "Create an idempotent service-consumer USDT payout execution.\n\nThis endpoint is a durable accept boundary. A `202` response with `state=CREATED` means SHKeeper stored the execution and will dispatch it through the payout reconciler. Consumers must use callbacks and `GET /api/v1/payout-executions/{external_id}` for monotonic progression.\n\nThe request accepts only execution-contract fields: `external_id`, `asset`, `network`, `amount`, and `destination`. Additional request fields are not part of the signed execution contract.\n\nThe request is signed with HMAC-SHA256. The signature base is `timestamp\\nnonce\\nMETHOD\\ncanonical_path\\ncanonical_query\\nbody_sha256`.",
+        "security": [
+          {
+            "Payout_HMAC": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Payout-Consumer",
+            "in": "header",
+            "required": true,
+            "description": "Configured service consumer id for payout execution.",
+            "schema": {
+              "type": "string",
+              "example": "merchant-app"
+            }
+          },
+          {
+            "name": "X-Payout-Key-Id",
+            "in": "header",
+            "required": true,
+            "description": "Configured key id for the payout HMAC secret.",
+            "schema": {
+              "type": "string",
+              "example": "default"
+            }
+          },
+          {
+            "name": "X-Payout-Timestamp",
+            "in": "header",
+            "required": true,
+            "description": "Unix timestamp in seconds. Default allowed clock skew is 300 seconds.",
+            "schema": {
+              "type": "integer",
+              "example": 1780560600
+            }
+          },
+          {
+            "name": "X-Payout-Nonce",
+            "in": "header",
+            "required": true,
+            "description": "Submit/status requests must use a one-time nonce. Callback deliveries use the callback `event_id` as the nonce; retries for the same callback reuse that nonce and must be deduplicated by `event_id`.",
+            "schema": {
+              "type": "string",
+              "example": "2c338f55-05ba-4a9c-aaf4-caa8fbd3148f"
+            }
+          },
+          {
+            "name": "X-Payout-Signature",
+            "in": "header",
+            "required": true,
+            "description": "Lowercase hex HMAC-SHA256 over `timestamp\\nnonce\\nMETHOD\\ncanonical_path\\ncanonical_query\\nbody_sha256`.",
+            "schema": {
+              "type": "string",
+              "example": "7db8cb77f00f3a8f2f6e2b9a960ad9ff3f7e4b1d4a77c1ac0f1d2e3f4a5b6c7d8"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PayoutExecutionRequest"
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "label": "CLI",
+            "source": "curl --location --request POST 'https://demo.shkeeper.io/api/v1/payout-executions' \\\n--header 'Content-Type: application/json' \\\n--header 'X-Payout-Consumer: merchant-app' \\\n--header 'X-Payout-Key-Id: default' \\\n--header 'X-Payout-Timestamp: 1780560600' \\\n--header 'X-Payout-Nonce: 2c338f55-05ba-4a9c-aaf4-caa8fbd3148f' \\\n--header 'X-Payout-Signature: SIGNATURE_HEX' \\\n--data-raw '{\"external_id\":\"W123456789\",\"asset\":\"USDT\",\"network\":\"TRON\",\"amount\":\"25.000000\",\"destination\":\"TQZL6tWjV3L1y7mK7Q9...\"}'\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/payout-executions/{external_id}": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Execution status retrieved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutExecutionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown payout auth headers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutExecutionError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid signature, replayed nonce, expired timestamp, or forbidden rail key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutExecutionError"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid external_id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutExecutionError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Execution not found for the authenticated consumer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutExecutionError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutExecutionError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get payout execution status",
+        "tags": [
+          "Payouts"
+        ],
+        "operationId": "GetPayoutExecutionStatus",
+        "description": "Return payout execution status scoped by the authenticated payout consumer.\n\nUse this endpoint after submit timeout, callback delay, scheduler reconciliation, and before any manual payout action. The response contains monotonic state evidence: `event_version`, `state_transition_id`, hashes, sidecar state, txids/message hashes, failure fields, and `reconciliation_required`.",
+        "security": [
+          {
+            "Payout_HMAC": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "external_id",
+            "in": "path",
+            "required": true,
+            "description": "Immutable consumer-side payout request id used when the payout execution was submitted.",
+            "schema": {
+              "type": "string",
+              "example": "W123456789"
+            }
+          },
+          {
+            "name": "X-Payout-Consumer",
+            "in": "header",
+            "required": true,
+            "description": "Configured service consumer id for payout execution.",
+            "schema": {
+              "type": "string",
+              "example": "merchant-app"
+            }
+          },
+          {
+            "name": "X-Payout-Key-Id",
+            "in": "header",
+            "required": true,
+            "description": "Configured key id for the payout HMAC secret.",
+            "schema": {
+              "type": "string",
+              "example": "default"
+            }
+          },
+          {
+            "name": "X-Payout-Timestamp",
+            "in": "header",
+            "required": true,
+            "description": "Unix timestamp in seconds. Default allowed clock skew is 300 seconds.",
+            "schema": {
+              "type": "integer",
+              "example": 1780560600
+            }
+          },
+          {
+            "name": "X-Payout-Nonce",
+            "in": "header",
+            "required": true,
+            "description": "Submit/status requests must use a one-time nonce. Callback deliveries use the callback `event_id` as the nonce; retries for the same callback reuse that nonce and must be deduplicated by `event_id`.",
+            "schema": {
+              "type": "string",
+              "example": "2c338f55-05ba-4a9c-aaf4-caa8fbd3148f"
+            }
+          },
+          {
+            "name": "X-Payout-Signature",
+            "in": "header",
+            "required": true,
+            "description": "Lowercase hex HMAC-SHA256 over `timestamp\\nnonce\\nMETHOD\\ncanonical_path\\ncanonical_query\\nbody_sha256`.",
+            "schema": {
+              "type": "string",
+              "example": "7db8cb77f00f3a8f2f6e2b9a960ad9ff3f7e4b1d4a77c1ac0f1d2e3f4a5b6c7d8"
+            }
+          }
+        ],
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "label": "CLI",
+            "source": "curl --location --request GET 'https://demo.shkeeper.io/api/v1/payout-executions/W123456789' \\\n--header 'X-Payout-Consumer: merchant-app' \\\n--header 'X-Payout-Key-Id: default' \\\n--header 'X-Payout-Timestamp: 1780560600' \\\n--header 'X-Payout-Nonce: 6a1f3072-d275-4a2e-b31b-f29d0926b2f3' \\\n--header 'X-Payout-Signature: SIGNATURE_HEX'\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/payout-executions/{execution_id}/manual-resolution": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Manual resolution recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutExecutionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid or incomplete manual-resolution evidence",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutExecutionError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authenticated operator is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutExecutionError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Execution not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutExecutionError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Requested resolution is not allowed from the current execution state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutExecutionError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Record operator manual-resolution evidence for a payout execution.",
+        "tags": [
+          "Payouts"
+        ],
+        "description": "Record operator manual-resolution evidence for a payout execution.\n\nThis endpoint is for SHKeeper operators when an execution is in a manual review boundary such as `RECONCILIATION_REQUIRED`. It records structured technical evidence, writes an audit row, and moves the execution through a constrained resolution state.",
+        "security": [
+          {
+            "Basic_Optional": []
+          },
+          {
+            "Basic": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "execution_id",
+            "in": "path",
+            "required": true,
+            "description": "Internal SHKeeper payout execution id.",
+            "schema": {
+              "type": "integer",
+              "example": 123
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PayoutManualResolutionRequest"
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "cURL",
+            "label": "CLI",
+            "source": "curl --location --request POST 'https://demo.shkeeper.io/api/v1/payout-executions/123/manual-resolution' \\\n--header 'Authorization: Basic YOUR_BASIC_AUTH' \\\n--header 'Content-Type: application/json' \\\n--data-raw '{\"resolution_status\":\"SAFE_FOR_MANUAL_PAYOUT\",\"operator_note\":\"negative chain evidence checked\",\"evidence\":{\"network\":\"TRON\",\"asset\":\"USDT\",\"execution_id\":123,\"external_id\":\"W123456789\",\"destination\":\"TQZL6tWjV3L1y7mK7Q9...\",\"amount\":\"25.000000\",\"last_state\":\"RECONCILIATION_REQUIRED\",\"last_sidecar_state\":\"RECONCILIATION_REQUIRED\",\"source_wallet\":\"fee_deposit\",\"token_contract\":\"TRC20-USDT\",\"checked_sources\":[\"tron-fullnode\",\"tron-indexer\"],\"searched_block_range\":{\"from\":100,\"to\":200},\"matching_transfer_found\":false,\"pending_original_artifact\":false}}'\n"
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -1354,7 +1753,7 @@
         }
       },
       "CallbackPaymentRequest": {
-        "description": "Confirmed payment callback sent to the merchant callback_url. Current `build_payment_notification()` output contains invoice/payment facts and optional AML enrichment facts. It does not emit merchant-facing business decision fields; Grither Pay makes credit/manual-review/reject decisions from the trigger transaction and AML facts.",
+        "description": "Confirmed payment callback sent to the merchant callback_url. Current `build_payment_notification()` output contains invoice/payment facts and optional AML enrichment facts. It does not emit merchant-facing business decision fields; The consuming application makes credit/manual-review/reject decisions from the trigger transaction and AML facts.",
         "type": "object",
         "properties": {
           "external_id": {
@@ -1449,7 +1848,7 @@
       },
       "CallbackAmlPolicy": {
         "type": "object",
-        "description": "Local SHKeeper AML policy facts used when an AML check was skipped. These fields are informational; Grither Pay decides whether to credit, review, or reject the deposit.",
+        "description": "Local SHKeeper AML policy facts used when an AML check was skipped. These fields are informational; The consuming application decides whether to credit, review, or reject the deposit.",
         "properties": {
           "min_check_amount_fiat": {
             "type": "string",
@@ -1472,7 +1871,7 @@
       },
       "CallbackAmlPayload": {
         "type": "object",
-        "description": "AML enrichment facts for the trigger transaction. SHKeeper does not emit business decision fields in this object. Grither Pay must decide credit/manual review/reject from these facts and its own policy.",
+        "description": "AML enrichment facts for the trigger transaction. SHKeeper does not emit business decision fields in this object. The consuming application must decide credit/manual review/reject from these facts and its own policy.",
         "properties": {
           "supported": {
             "type": "boolean",
@@ -1484,7 +1883,7 @@
           },
           "check_status": {
             "type": "string",
-            "description": "Normalized AML check status for Grither Pay integration. Use this field for application decisioning instead of raw `provider_status`.",
+            "description": "Normalized AML check status for consuming application integration. Use this field for application decisioning instead of raw `provider_status`.",
             "enum": [
               "success",
               "skipped",
@@ -1635,6 +2034,470 @@
           "amount"
         ],
         "additionalProperties": false
+      },
+      "PayoutExecutionRequest": {
+        "type": "object",
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "example": "W123456789",
+            "description": "Immutable consumer payout request id. It is unique inside the authenticated payout consumer and is used as the idempotency key."
+          },
+          "asset": {
+            "type": "string",
+            "enum": [
+              "USDT"
+            ],
+            "example": "USDT",
+            "description": "Payout execution asset. The current service contract supports USDT."
+          },
+          "network": {
+            "type": "string",
+            "enum": [
+              "TRON",
+              "TON",
+              "ETH"
+            ],
+            "example": "TRON",
+            "description": "Blockchain rail for the USDT payout."
+          },
+          "amount": {
+            "type": "string",
+            "example": "25.000000",
+            "description": "Positive decimal string in USDT units. Accepted values are canonicalized to exactly 6 decimal places."
+          },
+          "destination": {
+            "type": "string",
+            "example": "TQZL6tWjV3L1y7mK7Q9...",
+            "description": "Destination wallet address for the selected network."
+          }
+        },
+        "required": [
+          "amount",
+          "asset",
+          "destination",
+          "external_id",
+          "network"
+        ],
+        "additionalProperties": false
+      },
+      "PayoutExecutionResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "ACCEPTED",
+            "description": "Response marker. Submit returns ACCEPTED; status lookup returns OK."
+          },
+          "consumer": {
+            "type": "string",
+            "example": "merchant-app"
+          },
+          "execution_id": {
+            "type": "integer",
+            "example": 123
+          },
+          "sidecar_execution_id": {
+            "type": "string",
+            "example": null,
+            "nullable": true
+          },
+          "external_id": {
+            "type": "string",
+            "example": "W123456789"
+          },
+          "contract_version": {
+            "type": "string",
+            "example": "usdt-payout-execution-v1"
+          },
+          "event_version": {
+            "type": "integer",
+            "example": 1
+          },
+          "state_transition_id": {
+            "type": "string",
+            "example": "5a383116-5f69-493f-b4e2-8b5c948c5d5e"
+          },
+          "occurred_at": {
+            "type": "string",
+            "example": "2026-06-04T08:10:00Z"
+          },
+          "updated_at": {
+            "type": "string",
+            "example": "2026-06-04T08:10:00Z",
+            "nullable": true
+          },
+          "asset": {
+            "type": "string",
+            "example": "USDT"
+          },
+          "network": {
+            "type": "string",
+            "example": "TRON"
+          },
+          "crypto_id": {
+            "type": "string",
+            "example": "USDT"
+          },
+          "sidecar_symbol": {
+            "type": "string",
+            "example": "USDT"
+          },
+          "payout_queue": {
+            "type": "string",
+            "example": "tron_usdt_fee_payouts"
+          },
+          "source_wallet_ref": {
+            "type": "string",
+            "example": "fee_deposit"
+          },
+          "state": {
+            "type": "string",
+            "example": "CREATED",
+            "description": "Monotonic SHKeeper payout state. Known values include CREATED, PREFLIGHTED, ENQUEUEING, ENQUEUED, BROADCAST, CONFIRMED, FAILED_PRE_BROADCAST, FAILED_CHAIN_TERMINAL, RECONCILIATION_REQUIRED, MANUAL_REVIEW, SAFE_FOR_MANUAL_PAYOUT, MANUAL_PAYOUT_PENDING, and MANUAL_PAYOUT_COMPLETED."
+          },
+          "failure_class": {
+            "type": "string",
+            "example": null,
+            "nullable": true
+          },
+          "amount": {
+            "type": "string",
+            "example": "25.000000"
+          },
+          "destination": {
+            "type": "string",
+            "example": "TQZL6tWjV3L1y7mK7Q9..."
+          },
+          "callback_endpoint_id": {
+            "type": "string",
+            "example": "merchant-app-main"
+          },
+          "request_hash": {
+            "type": "string",
+            "example": "0e6f8d2f9f0accc1b67d7c7b4e7e2e0a7a9b2d0c..."
+          },
+          "sidecar_payload_hash": {
+            "type": "string",
+            "example": "2dd4512a18b9d64cb35a0c4f00d9ec4e1c3b..."
+          },
+          "sidecar_state": {
+            "type": "string",
+            "example": null,
+            "nullable": true
+          },
+          "sidecar_state_version": {
+            "type": "integer",
+            "example": null,
+            "nullable": true
+          },
+          "sidecar_state_updated_at": {
+            "type": "string",
+            "example": null,
+            "nullable": true
+          },
+          "sidecar_status_hash": {
+            "type": "string",
+            "example": null,
+            "nullable": true
+          },
+          "sidecar_status_observed_at": {
+            "type": "string",
+            "example": null,
+            "nullable": true
+          },
+          "sidecar_evidence": {
+            "type": "object",
+            "example": {},
+            "additionalProperties": {}
+          },
+          "txids": {
+            "type": "array",
+            "example": [],
+            "items": {
+              "type": "string"
+            }
+          },
+          "message_hashes": {
+            "type": "array",
+            "example": [],
+            "items": {
+              "type": "string"
+            }
+          },
+          "error_code": {
+            "type": "string",
+            "example": null,
+            "nullable": true
+          },
+          "error_message": {
+            "type": "string",
+            "example": null,
+            "nullable": true
+          },
+          "reconciliation_required": {
+            "type": "boolean",
+            "example": false
+          },
+          "resolution_status": {
+            "type": "string",
+            "example": "UNRESOLVED"
+          },
+          "resolution_evidence": {
+            "type": "object",
+            "example": {},
+            "additionalProperties": {}
+          },
+          "resolution_evidence_hash": {
+            "type": "string",
+            "example": null,
+            "nullable": true
+          },
+          "resolution_operator_note": {
+            "type": "string",
+            "example": null,
+            "nullable": true
+          },
+          "resolved_by": {
+            "type": "string",
+            "example": null,
+            "nullable": true
+          },
+          "resolved_at": {
+            "type": "string",
+            "example": null,
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "PayoutExecutionError": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "error"
+          },
+          "code": {
+            "type": "string",
+            "example": "PAYOUT_EXECUTION_CONFLICT"
+          },
+          "message": {
+            "type": "string",
+            "example": "Payout execution external_id already exists"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PayoutManualResolutionRequest": {
+        "type": "object",
+        "properties": {
+          "resolution_status": {
+            "type": "string",
+            "enum": [
+              "SAFE_FOR_MANUAL_PAYOUT",
+              "CHAIN_BROADCAST_FOUND",
+              "MANUAL_PAYOUT_PENDING",
+              "MANUAL_PAYOUT_COMPLETED",
+              "CANCELLED_PRE_BROADCAST"
+            ],
+            "example": "SAFE_FOR_MANUAL_PAYOUT",
+            "description": "Operator resolution action for an execution that needs review."
+          },
+          "operator_note": {
+            "type": "string",
+            "example": "negative chain evidence checked",
+            "description": "Operator note stored with the audit row.",
+            "nullable": true
+          },
+          "evidence": {
+            "type": "object",
+            "description": "Structured technical evidence for the resolution. SHKeeper validates execution identity, last known state, source wallet, checked sources, chain search range, and action-specific tx or negative evidence. Business amount policies belong to the consuming application.",
+            "example": {
+              "network": "TRON",
+              "asset": "USDT",
+              "execution_id": 123,
+              "external_id": "W123456789",
+              "destination": "TQZL6tWjV3L1y7mK7Q9...",
+              "amount": "25.000000",
+              "last_state": "RECONCILIATION_REQUIRED",
+              "last_sidecar_state": "RECONCILIATION_REQUIRED",
+              "source_wallet": "fee_deposit",
+              "token_contract": "TRC20-USDT",
+              "checked_sources": [
+                "tron-fullnode",
+                "tron-indexer"
+              ],
+              "searched_block_range": {
+                "from": 100,
+                "to": 200
+              },
+              "matching_transfer_found": false,
+              "pending_original_artifact": false
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "evidence",
+          "resolution_status"
+        ],
+        "additionalProperties": false
+      },
+      "PayoutExecutionCallbackEvent": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "example": "f6a491c4-9f5d-4a5b-87f5-f5a5d7e75688"
+          },
+          "event_version": {
+            "type": "integer",
+            "example": 2
+          },
+          "state_transition_id": {
+            "type": "string",
+            "example": "d6505bf7-d25e-47cf-a64d-9e544d9f2301"
+          },
+          "occurred_at": {
+            "type": "string",
+            "example": "2026-06-04T08:11:00.000000Z"
+          },
+          "consumer": {
+            "type": "string",
+            "example": "merchant-app"
+          },
+          "execution_id": {
+            "type": "integer",
+            "example": 123
+          },
+          "sidecar_execution_id": {
+            "type": "string",
+            "example": "123",
+            "nullable": true
+          },
+          "external_id": {
+            "type": "string",
+            "example": "W123456789"
+          },
+          "asset": {
+            "type": "string",
+            "example": "USDT"
+          },
+          "network": {
+            "type": "string",
+            "example": "TRON"
+          },
+          "amount": {
+            "type": "string",
+            "example": "25.000000"
+          },
+          "destination": {
+            "type": "string",
+            "example": "TQZL6tWjV3L1y7mK7Q9..."
+          },
+          "previous_state": {
+            "type": "string",
+            "example": "ENQUEUED",
+            "nullable": true
+          },
+          "state": {
+            "type": "string",
+            "example": "BROADCAST"
+          },
+          "failure_class": {
+            "type": "string",
+            "example": null,
+            "nullable": true
+          },
+          "txids": {
+            "type": "array",
+            "example": [
+              "4c32969220743644e3480d96e95a423d351049ac6296b8315103225709881ae3"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "message_hashes": {
+            "type": "array",
+            "example": [],
+            "items": {
+              "type": "string"
+            }
+          },
+          "error_code": {
+            "type": "string",
+            "example": null,
+            "nullable": true
+          },
+          "error_message": {
+            "type": "string",
+            "example": null,
+            "nullable": true
+          },
+          "reconciliation_required": {
+            "type": "boolean",
+            "example": false
+          },
+          "callback_endpoint_id": {
+            "type": "string",
+            "example": "merchant-app-main"
+          },
+          "request_hash": {
+            "type": "string",
+            "example": "0e6f8d2f9f0accc1b67d7c7b4e7e2e0a7..."
+          },
+          "sidecar_payload_hash": {
+            "type": "string",
+            "example": "2dd4512a18b9d64cb35a0c4f00..."
+          },
+          "sidecar_status_hash": {
+            "type": "string",
+            "example": null,
+            "nullable": true
+          },
+          "sidecar_status_observed_at": {
+            "type": "string",
+            "example": null,
+            "nullable": true
+          },
+          "sidecar_evidence": {
+            "type": "object",
+            "example": {},
+            "additionalProperties": {}
+          },
+          "resolution_status": {
+            "type": "string",
+            "example": "UNRESOLVED"
+          },
+          "resolution_evidence": {
+            "type": "object",
+            "example": {},
+            "additionalProperties": {}
+          },
+          "resolution_evidence_hash": {
+            "type": "string",
+            "example": null,
+            "nullable": true
+          },
+          "resolution_operator_note": {
+            "type": "string",
+            "example": null,
+            "nullable": true
+          },
+          "resolved_by": {
+            "type": "string",
+            "example": null,
+            "nullable": true
+          },
+          "resolved_at": {
+            "type": "string",
+            "example": null,
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
       }
     },
     "securitySchemes": {
@@ -1648,6 +2511,17 @@
         "type": "http",
         "description": "SHKeeper supports authenticating and authorizing users through the Basic HTTP authentication scheme. Send the user and password encoded in base64 with the format `Basic {base64(username:password)}`. Using this authentication is required for payout-related endpoints, and for metrics, but another credentials. Metric credentials can be set by environment variables: `METRICS_USERNAME`, `METRICS_PASSWORD`. The default `username`:`password` is `shkeeper`:`shkeeper`.\n",
         "scheme": "Basic"
+      },
+      "Payout_HMAC": {
+        "type": "apiKey",
+        "description": "Service-to-service payout HMAC authentication. Send `X-Payout-Consumer`, `X-Payout-Key-Id`, `X-Payout-Timestamp`, `X-Payout-Nonce`, and `X-Payout-Signature`. The signature is HMAC-SHA256 over `timestamp\\nnonce\\nMETHOD\\ncanonical_path\\ncanonical_query\\nbody_sha256`.",
+        "name": "X-Payout-Signature",
+        "in": "header"
+      },
+      "Basic_Optional": {
+        "type": "http",
+        "description": "Optional Basic Auth: if `Authorization` header is provided, the user is attached to the request context (`g.user`). Otherwise, the request is treated as anonymous.",
+        "scheme": "basic"
       }
     },
     "examples": {
@@ -1841,11 +2715,11 @@
           "fee_policy": "PERCENT_FEE",
           "overpaid_fiat": "0.00"
         },
-        "description": "Confirmed callback without AML enrichment. In the Grither Pay fork, only the trigger transaction includes `aml` when AML enrichment is applicable or when the asset is explicitly unsupported."
+        "description": "Confirmed callback without AML enrichment. Only the trigger transaction includes `aml` when AML enrichment is applicable or when the asset is explicitly unsupported."
       },
       "CallbackPaymentRequestAmlCheckedExample": {
         "summary": "Payment callback with successful AML enrichment",
-        "description": "Successful AML result. Grither Pay receives the score and provider signals, then decides whether to credit, review, or reject according to its own policy.",
+        "description": "Successful AML result. The consuming application receives the score and provider signals, then decides whether to credit, review, or reject according to its own policy.",
         "value": {
           "external_id": "static-test-user-3-usdt",
           "crypto": "USDT",
@@ -2139,7 +3013,7 @@
       },
       "CallbackPaymentRequestAmlUnsupportedExample": {
         "summary": "Payment callback for asset not supported by AML provider",
-        "description": "Unsupported AML coverage is reported as unchecked AML facts. SHKeeper does not mark the deposit for manual review; Grither Pay decides how to handle the payment.",
+        "description": "Unsupported AML coverage is reported as unchecked AML facts. SHKeeper does not mark the deposit for manual review; The consuming application decides how to handle the payment.",
         "value": {
           "external_id": "static-test-user-bnb",
           "crypto": "BNB",
@@ -2186,7 +3060,7 @@
       },
       "CallbackPaymentRequestAmlSkippedExample": {
         "summary": "Payment callback where AML check was skipped by local SHKeeper policy",
-        "description": "Small or cumulative-threshold-skipped transaction. Grither Pay receives the skip policy facts and makes the final decision.",
+        "description": "Small or cumulative-threshold-skipped transaction. The consuming application receives the skip policy facts and makes the final decision.",
         "value": {
           "external_id": "small-usdt-payment",
           "crypto": "USDT",
@@ -2240,7 +3114,7 @@
       },
       "UnconfirmedCallbackPaymentRequestExample": {
         "summary": "Unconfirmed transaction callback",
-        "description": "Sent before final confirmation for supported networks. This callback has no AML object and should not be used as a final credit decision by Grither Pay.",
+        "description": "Sent before final confirmation for supported networks. This callback has no AML object and should not be used as a final credit decision by the consuming application.",
         "value": {
           "status": "unconfirmed",
           "external_id": "static-test-user-3-usdt",
@@ -2357,6 +3231,11 @@
       "name": "Other",
       "x-displayName": "Useful endpoints",
       "description": "Other operations"
+    },
+    {
+      "name": "Payout callbacks",
+      "x-displayName": "Payout callbacks",
+      "description": "Callbacks sent by SHKeeper after payout execution state changes."
     }
   ],
   "x-tagGroups": [
@@ -2386,5 +3265,141 @@
         "Metrics"
       ]
     }
-  ]
+  ],
+  "webhooks": {
+    "shkeeperPayoutExecutionCallback": {
+      "post": {
+        "operationId": "ReceiveShKeeperPayoutExecutionCallback",
+        "summary": "Receive SHKeeper payout execution callback",
+        "description": "Consumer webhook implemented by the upstream application. SHKeeper sends this signed callback whenever a payout execution changes state. Callback retries reuse `event_id` as `X-Payout-Nonce`; the consumer must deduplicate by `event_id` and apply events monotonically.",
+        "servers": [
+          {
+            "url": "https://consumer.example.com",
+            "description": "Consumer webhook server"
+          }
+        ],
+        "tags": [
+          "Payout callbacks"
+        ],
+        "security": [
+          {
+            "Payout_HMAC": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Payout-Consumer",
+            "in": "header",
+            "required": true,
+            "description": "Configured service consumer id for payout execution.",
+            "schema": {
+              "type": "string",
+              "example": "merchant-app"
+            }
+          },
+          {
+            "name": "X-Payout-Key-Id",
+            "in": "header",
+            "required": true,
+            "description": "Configured key id for the payout HMAC secret.",
+            "schema": {
+              "type": "string",
+              "example": "default"
+            }
+          },
+          {
+            "name": "X-Payout-Timestamp",
+            "in": "header",
+            "required": true,
+            "description": "Unix timestamp in seconds. Default allowed clock skew is 300 seconds.",
+            "schema": {
+              "type": "integer",
+              "example": 1780560600
+            }
+          },
+          {
+            "name": "X-Payout-Nonce",
+            "in": "header",
+            "required": true,
+            "description": "Submit/status requests must use a one-time nonce. Callback deliveries use the callback `event_id` as the nonce; retries for the same callback reuse that nonce and must be deduplicated by `event_id`.",
+            "schema": {
+              "type": "string",
+              "example": "2c338f55-05ba-4a9c-aaf4-caa8fbd3148f"
+            }
+          },
+          {
+            "name": "X-Payout-Signature",
+            "in": "header",
+            "required": true,
+            "description": "Lowercase hex HMAC-SHA256 over `timestamp\\nnonce\\nMETHOD\\ncanonical_path\\ncanonical_query\\nbody_sha256`.",
+            "schema": {
+              "type": "string",
+              "example": "7db8cb77f00f3a8f2f6e2b9a960ad9ff3f7e4b1d4a77c1ac0f1d2e3f4a5b6c7d8"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PayoutExecutionCallbackEvent"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Callback accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "accepted"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed callback body or stale/conflicting event",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutExecutionError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown payout auth headers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutExecutionError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid signature, expired timestamp, or invalid callback auth",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutExecutionError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 }

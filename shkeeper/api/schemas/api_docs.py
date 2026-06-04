@@ -26,6 +26,11 @@ from shkeeper.api.schemas.marshmallow_schemas import (
     DecryptionKeySuccessSchema,
     PayoutStatusErrorSchema,
     PayoutStatusResponseSchema,
+    PayoutExecutionCallbackEventSchema,
+    PayoutExecutionErrorSchema,
+    PayoutManualResolutionRequestSchema,
+    PayoutExecutionRequestSchema,
+    PayoutExecutionResponseSchema,
 )
 
 crypto_list_doc = {
@@ -561,7 +566,7 @@ decryption_key_doc = {
                 "curl --location --request POST "
                 "'https://demo.shkeeper.io/api/v1/decryption-key' \\\n"
                 "--header 'X-Shkeeper-API-Key: YOUR_API_KEY' \\\n"
-                "--form 'key=asdfasfasgasgasgasgdeagweg'\n"
+                "--form 'key=YOUR_DECRYPTION_KEY'\n"
             ),
         }
     ],
@@ -622,4 +627,292 @@ payout_status_doc = {
             ),
         }
     ],
+}
+
+
+payout_hmac_headers = [
+    {
+        "name": "X-Payout-Consumer",
+        "in": "header",
+        "required": True,
+        "description": "Configured service consumer id, for example `merchant-app`.",
+        "schema": {"type": "string", "example": "merchant-app"},
+    },
+    {
+        "name": "X-Payout-Key-Id",
+        "in": "header",
+        "required": True,
+        "description": "Configured key id for the service consumer.",
+        "schema": {"type": "string", "example": "default"},
+    },
+    {
+        "name": "X-Payout-Timestamp",
+        "in": "header",
+        "required": True,
+        "description": "Unix timestamp in seconds. Default allowed clock skew is 300 seconds.",
+        "schema": {"type": "integer", "example": 1780560600},
+    },
+    {
+        "name": "X-Payout-Nonce",
+        "in": "header",
+        "required": True,
+        "description": "Unique nonce for this signed request. Reuse is rejected.",
+        "schema": {"type": "string", "example": "2c338f55-05ba-4a9c-aaf4-caa8fbd3148f"},
+    },
+    {
+        "name": "X-Payout-Signature",
+        "in": "header",
+        "required": True,
+        "description": (
+            "Hex HMAC-SHA256 signature over "
+            "`timestamp\\nnonce\\nMETHOD\\ncanonical_path\\ncanonical_query\\nbody_sha256`."
+        ),
+        "schema": {
+            "type": "string",
+            "example": "7db8cb77f00f3a8f2f6e2b9a960ad9ff3f7e4b1d4a77c1ac0f1d2e3f4a5b6c7d8",
+        },
+    },
+]
+
+
+payout_execution_create_doc = {
+    "operationId": "CreatePayoutExecution",
+    "summary": "Create payout execution",
+    "description": (
+        "Create an idempotent service-consumer USDT payout execution.\n\n"
+        "This endpoint is a durable accept boundary. A `202` response with "
+        "`state=CREATED` means SHKeeper stored the execution and will dispatch it "
+        "through the payout reconciler. Consumers must use callbacks and "
+        "`GET /api/v1/payout-executions/{external_id}` for monotonic progression.\n\n"
+        "The request accepts only execution-contract fields: `external_id`, "
+        "`asset`, `network`, `amount`, and `destination`. Additional request "
+        "fields are not part of the signed execution contract.\n\n"
+        "The request is signed with HMAC-SHA256. The signature base is "
+        "`timestamp\\nnonce\\nMETHOD\\ncanonical_path\\ncanonical_query\\nbody_sha256`."
+    ),
+    "tags": ["Payouts"],
+    "security": [{"Payout_HMAC": []}],
+    "parameters": payout_hmac_headers,
+    "requestBody": {
+        "required": True,
+        "content": {"application/json": {"schema": PayoutExecutionRequestSchema}},
+    },
+    "responses": {
+        202: {
+            "description": "Execution accepted or idempotent existing execution returned",
+            "content": {"application/json": {"schema": PayoutExecutionResponseSchema}},
+        },
+        400: {
+            "description": "Invalid payout request or disabled/unsupported rail",
+            "content": {"application/json": {"schema": PayoutExecutionErrorSchema}},
+        },
+        401: {
+            "description": "Missing or unknown payout auth headers",
+            "content": {"application/json": {"schema": PayoutExecutionErrorSchema}},
+        },
+        403: {
+            "description": "Invalid signature, replayed nonce, expired timestamp, or forbidden rail key",
+            "content": {"application/json": {"schema": PayoutExecutionErrorSchema}},
+        },
+        409: {
+            "description": "The external_id already exists with a different canonical request",
+            "content": {"application/json": {"schema": PayoutExecutionErrorSchema}},
+        },
+        503: {
+            "description": "Enabled rail is not dispatchable or callback endpoint is not configured",
+            "content": {"application/json": {"schema": PayoutExecutionErrorSchema}},
+        },
+        500: {
+            "description": "Unexpected server error",
+            "content": {"application/json": {"schema": PayoutExecutionErrorSchema}},
+        },
+    },
+    "x-codeSamples": [
+        {
+            "lang": "cURL",
+            "label": "CLI",
+            "source": (
+                "curl --location --request POST "
+                "'https://demo.shkeeper.io/api/v1/payout-executions' \\\n"
+                "--header 'Content-Type: application/json' \\\n"
+                "--header 'X-Payout-Consumer: merchant-app' \\\n"
+                "--header 'X-Payout-Key-Id: default' \\\n"
+                "--header 'X-Payout-Timestamp: 1780560600' \\\n"
+                "--header 'X-Payout-Nonce: 2c338f55-05ba-4a9c-aaf4-caa8fbd3148f' \\\n"
+                "--header 'X-Payout-Signature: SIGNATURE_HEX' \\\n"
+                "--data-raw '{\"external_id\":\"W123456789\",\"asset\":\"USDT\","
+                "\"network\":\"TRON\",\"amount\":\"25.000000\","
+                "\"destination\":\"TQZL6tWjV3L1y7mK7Q9...\"}'\n"
+            ),
+        }
+    ],
+}
+
+
+payout_execution_status_doc = {
+    "operationId": "GetPayoutExecutionStatus",
+    "summary": "Get payout execution status",
+    "description": (
+        "Return payout execution status scoped by the authenticated payout consumer.\n\n"
+        "Use this endpoint after submit timeout, callback delay, scheduler "
+        "reconciliation, and before any manual payout action. The response contains "
+        "monotonic state evidence: `event_version`, `state_transition_id`, hashes, "
+        "sidecar state, txids/message hashes, failure fields, and "
+        "`reconciliation_required`."
+    ),
+    "tags": ["Payouts"],
+    "security": [{"Payout_HMAC": []}],
+    "parameters": [
+        {
+            "name": "external_id",
+            "in": "path",
+            "required": True,
+            "description": "Consumer payout request id used when the execution was submitted.",
+            "schema": {"type": "string", "example": "W123456789"},
+        },
+        *payout_hmac_headers,
+    ],
+    "responses": {
+        200: {
+            "description": "Execution status retrieved",
+            "content": {"application/json": {"schema": PayoutExecutionResponseSchema}},
+        },
+        401: {
+            "description": "Missing or unknown payout auth headers",
+            "content": {"application/json": {"schema": PayoutExecutionErrorSchema}},
+        },
+        403: {
+            "description": "Invalid signature, replayed nonce, expired timestamp, or forbidden rail key",
+            "content": {"application/json": {"schema": PayoutExecutionErrorSchema}},
+        },
+        400: {
+            "description": "Invalid external_id",
+            "content": {"application/json": {"schema": PayoutExecutionErrorSchema}},
+        },
+        404: {
+            "description": "Execution not found for the authenticated consumer",
+            "content": {"application/json": {"schema": PayoutExecutionErrorSchema}},
+        },
+        500: {
+            "description": "Unexpected server error",
+            "content": {"application/json": {"schema": PayoutExecutionErrorSchema}},
+        },
+    },
+    "x-codeSamples": [
+        {
+            "lang": "cURL",
+            "label": "CLI",
+            "source": (
+                "curl --location --request GET "
+                "'https://demo.shkeeper.io/api/v1/payout-executions/W123456789' \\\n"
+                "--header 'X-Payout-Consumer: merchant-app' \\\n"
+                "--header 'X-Payout-Key-Id: default' \\\n"
+                "--header 'X-Payout-Timestamp: 1780560600' \\\n"
+                "--header 'X-Payout-Nonce: 6a1f3072-d275-4a2e-b31b-f29d0926b2f3' \\\n"
+                "--header 'X-Payout-Signature: SIGNATURE_HEX'\n"
+            ),
+        }
+    ],
+}
+
+
+payout_execution_manual_resolution_doc = {
+    "description": (
+        "Record operator manual-resolution evidence for a payout execution.\n\n"
+        "This endpoint is for SHKeeper operators when an execution is in a manual "
+        "review boundary such as `RECONCILIATION_REQUIRED`. It records structured "
+        "technical evidence, writes an audit row, and moves the execution through "
+        "a constrained resolution state."
+    ),
+    "tags": ["Payouts"],
+    "security": [{"Basic_Optional": []}, {"Basic": []}],
+    "parameters": [
+        {
+            "name": "execution_id",
+            "in": "path",
+            "required": True,
+            "description": "Internal SHKeeper payout execution id.",
+            "schema": {"type": "integer", "example": 123},
+        }
+    ],
+    "requestBody": {
+        "required": True,
+        "content": {
+            "application/json": {"schema": PayoutManualResolutionRequestSchema}
+        },
+    },
+    "responses": {
+        200: {
+            "description": "Manual resolution recorded",
+            "content": {"application/json": {"schema": PayoutExecutionResponseSchema}},
+        },
+        400: {
+            "description": "Invalid or incomplete manual-resolution evidence",
+            "content": {"application/json": {"schema": PayoutExecutionErrorSchema}},
+        },
+        403: {
+            "description": "Authenticated operator is required",
+            "content": {"application/json": {"schema": PayoutExecutionErrorSchema}},
+        },
+        404: {
+            "description": "Execution not found",
+            "content": {"application/json": {"schema": PayoutExecutionErrorSchema}},
+        },
+        409: {
+            "description": "Requested resolution is not allowed from the current execution state",
+            "content": {"application/json": {"schema": PayoutExecutionErrorSchema}},
+        },
+    },
+    "x-codeSamples": [
+        {
+            "lang": "cURL",
+            "label": "CLI",
+            "source": (
+                "curl --location --request POST "
+                "'https://demo.shkeeper.io/api/v1/payout-executions/123/manual-resolution' \\\n"
+                "--header 'Authorization: Basic YOUR_BASIC_AUTH' \\\n"
+                "--header 'Content-Type: application/json' \\\n"
+                "--data-raw '{\"resolution_status\":\"SAFE_FOR_MANUAL_PAYOUT\","
+                "\"operator_note\":\"negative chain evidence checked\","
+                "\"evidence\":{\"network\":\"TRON\",\"asset\":\"USDT\","
+                "\"execution_id\":123,\"external_id\":\"W123456789\","
+                "\"destination\":\"TQZL6tWjV3L1y7mK7Q9...\","
+                "\"amount\":\"25.000000\",\"last_state\":\"RECONCILIATION_REQUIRED\","
+                "\"last_sidecar_state\":\"RECONCILIATION_REQUIRED\","
+                "\"source_wallet\":\"fee_deposit\",\"token_contract\":\"TRC20-USDT\","
+                "\"checked_sources\":[\"tron-fullnode\",\"tron-indexer\"],"
+                "\"searched_block_range\":{\"from\":100,\"to\":200},"
+                "\"matching_transfer_found\":false,"
+                "\"pending_original_artifact\":false}}'\n"
+            ),
+        }
+    ],
+}
+
+
+payout_execution_callback_doc = {
+    "description": (
+        "Outbound callback body sent by SHKeeper to the configured consumer callback "
+        "endpoint when a payout execution changes state. It is signed with the same "
+        "`X-Payout-*` HMAC header family as the submit/status API. This schema is "
+        "for consumer webhook implementation; it is not a SHKeeper inbound endpoint."
+    ),
+    "tags": ["Notifications"],
+    "requestBody": {
+        "required": True,
+        "content": {"application/json": {"schema": PayoutExecutionCallbackEventSchema}},
+    },
+    "responses": {
+        202: {
+            "description": "Callback accepted by consumer",
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {"status": {"type": "string", "example": "accepted"}},
+                    }
+                }
+            },
+        }
+    },
 }

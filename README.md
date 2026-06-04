@@ -70,6 +70,8 @@ https://demo.shkeeper.io/
 
 **Webhook signature verification (HMAC-SHA256):** step-by-step guide for validating invoice and payout callbacks — [webhook_verification.md](https://github.com/vsys-host/shkeeper-docs/blob/main/docs/getting-started/webhook_verification.md) (Python, Flask, PHP examples). Use this when implementing or updating a custom payment module.
 
+**Grither Pay payout integration:** AI-friendly handoff for implementing SHKeeper client payouts in Grither Pay — [docs/grither-pay-payout-integration.md](docs/grither-pay-payout-integration.md). OpenAPI documentation with payout execution methods: [docs/openapi-3.json](docs/openapi-3.json).
+
 **Latest announcements:** https://shkeeper.io/news
 
 <a name="available-coins"></a>

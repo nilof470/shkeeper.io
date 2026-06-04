@@ -119,6 +119,11 @@ class Ethereum(Crypto):
         return {"error": None}
 
     def mkpayout(self, destination, amount, fee, subtract_fee_from_amount=False):
+        from shkeeper.services.payout_rail_catalog import (
+            assert_direct_crypto_legacy_spend_allowed,
+        )
+
+        assert_direct_crypto_legacy_spend_allowed(self.crypto)
         if self.crypto == self.network_currency and subtract_fee_from_amount:
             fee = Decimal(self.estimate_tx_fee(amount)["fee"])
             if fee >= amount:
@@ -132,6 +137,11 @@ class Ethereum(Crypto):
         return response
 
     def multipayout(self, payout_list):
+        from shkeeper.services.payout_rail_catalog import (
+            assert_direct_crypto_legacy_spend_allowed,
+        )
+
+        assert_direct_crypto_legacy_spend_allowed(self.crypto)
         response = requests.post(
             f"http://{self.gethost()}/{self.crypto}/multipayout",
             auth=self.get_auth_creds(),

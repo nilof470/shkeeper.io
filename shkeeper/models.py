@@ -183,39 +183,45 @@ class Wallet(db.Model):
         if not self.payout:
             return False
 
-        self.last_payout_attempt = datetime.now()
-        db.session.commit()
+        from shkeeper.services.payout_rail_catalog import legacy_spend_guard_context
 
-        crypto = Crypto.instances[self.crypto]
-        balance = crypto.balance()
-        if crypto.wallet.prespolicy == PayoutReservePolicy.DISABLE:
-            res = crypto.mkpayout(
-                self.pdest, balance, self.pfee, subtract_fee_from_amount=True
-            )
-        elif crypto.wallet.prespolicy == PayoutReservePolicy.AMOUNT:
-            should_payout = balance - Decimal(crypto.wallet.presamount)
-            if should_payout <= 0:
-                raise Exception(
-                    f"Unable to autopayout, reserved amount is bigger or equal to balance: {balance} < {crypto.wallet.presamount}"
+        with legacy_spend_guard_context(
+            self.crypto,
+            spend_origin="service",
+        ):
+            self.last_payout_attempt = datetime.now()
+            db.session.commit()
+
+            crypto = Crypto.instances[self.crypto]
+            balance = crypto.balance()
+            if crypto.wallet.prespolicy == PayoutReservePolicy.DISABLE:
+                res = crypto.mkpayout(
+                    self.pdest, balance, self.pfee, subtract_fee_from_amount=True
                 )
-            else:
+            elif crypto.wallet.prespolicy == PayoutReservePolicy.AMOUNT:
+                should_payout = balance - Decimal(crypto.wallet.presamount)
+                if should_payout <= 0:
+                    raise Exception(
+                        f"Unable to autopayout, reserved amount is bigger or equal to balance: {balance} < {crypto.wallet.presamount}"
+                    )
+                else:
+                    res = crypto.mkpayout(
+                        self.pdest, should_payout, self.pfee, subtract_fee_from_amount=True
+                    )
+            elif crypto.wallet.prespolicy == PayoutReservePolicy.PERCENT:
+                should_payout = balance * (
+                    1 - (Decimal(crypto.wallet.presamount) / 100)
+                )  # presamount is stored as integer percent
                 res = crypto.mkpayout(
                     self.pdest, should_payout, self.pfee, subtract_fee_from_amount=True
                 )
-        elif crypto.wallet.prespolicy == PayoutReservePolicy.PERCENT:
-            should_payout = balance * (
-                1 - (Decimal(crypto.wallet.presamount) / 100)
-            )  # presamount is stored as integer percent
-            res = crypto.mkpayout(
-                self.pdest, should_payout, self.pfee, subtract_fee_from_amount=True
-            )
-        else:
-            app.logger.info(
-                f"Unexpected Autopayout Reservation Policy : {crypto.wallet.prespolicy}, possibly after upgrading, running without reservation"
-            )
-            res = crypto.mkpayout(
-                self.pdest, balance, self.pfee, subtract_fee_from_amount=True
-            )
+            else:
+                app.logger.info(
+                    f"Unexpected Autopayout Reservation Policy : {crypto.wallet.prespolicy}, possibly after upgrading, running without reservation"
+                )
+                res = crypto.mkpayout(
+                    self.pdest, balance, self.pfee, subtract_fee_from_amount=True
+                )
         task_id = res.get("task_id")
         app.logger.warning(f"payout do_payt create {res}")
         Payout.add(
@@ -776,6 +782,296 @@ class PayoutStatus(enum.Enum):
     IN_PROGRESS = enum.auto()
     SUCCESS = enum.auto()
     FAIL = enum.auto()
+
+
+class PayoutExecutionState(enum.Enum):
+    CREATED = enum.auto()
+    PREFLIGHTED = enum.auto()
+    ENQUEUEING = enum.auto()
+    ENQUEUED = enum.auto()
+    BROADCAST = enum.auto()
+    CONFIRMED = enum.auto()
+    FAILED_PRE_BROADCAST = enum.auto()
+    FAILED_CHAIN_TERMINAL = enum.auto()
+    RECONCILIATION_REQUIRED = enum.auto()
+    MANUAL_REVIEW = enum.auto()
+    SAFE_FOR_MANUAL_PAYOUT = enum.auto()
+    MANUAL_PAYOUT_PENDING = enum.auto()
+    MANUAL_PAYOUT_COMPLETED = enum.auto()
+
+
+class PayoutFailureClass(enum.Enum):
+    VALIDATION = enum.auto()
+    PREFLIGHT = enum.auto()
+    WORKER_UNAVAILABLE = enum.auto()
+    SIDECAR_TIMEOUT = enum.auto()
+    CHAIN_TERMINAL = enum.auto()
+    AMBIGUOUS = enum.auto()
+    OPERATOR_RESOLVED = enum.auto()
+
+
+class PayoutResolutionStatus(enum.Enum):
+    UNRESOLVED = enum.auto()
+    SAFE_FOR_MANUAL_PAYOUT = enum.auto()
+    CHAIN_BROADCAST_FOUND = enum.auto()
+    MANUAL_PAYOUT_PENDING = enum.auto()
+    MANUAL_PAYOUT_COMPLETED = enum.auto()
+    CANCELLED_PRE_BROADCAST = enum.auto()
+
+
+class PayoutRailHotWalletPolicy(enum.Enum):
+    CURRENT_SIDECAR_SOURCE_WALLET = enum.auto()
+    CURRENT_SIDECAR_SOURCE_WALLET_WITH_SHARED_GUARD = enum.auto()
+
+
+class PayoutRailLegacySpendPolicy(enum.Enum):
+    BLOCK_AUTOMATIC_BYPASS = enum.auto()
+    ROUTE_AUTOMATIC_THROUGH_PAYOUT_EXECUTION = enum.auto()
+
+
+class PayoutRail(db.Model):
+    __table_args__ = (
+        db.UniqueConstraint(
+            "consumer",
+            "asset",
+            "network",
+            name="uq_payout_rail_consumer_asset_network",
+        ),
+        db.Index("ix_payout_rail_enabled_lookup", "consumer", "asset", "network"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp(), index=True)
+    updated_at = db.Column(
+        db.DateTime,
+        default=db.func.current_timestamp(),
+        onupdate=db.func.current_timestamp(),
+    )
+    consumer = db.Column(db.String, nullable=False)
+    asset = db.Column(db.String, nullable=False)
+    network = db.Column(db.String, nullable=False)
+    crypto_id = db.Column(db.String, nullable=False)
+    sidecar_service = db.Column(db.String, nullable=False)
+    sidecar_symbol = db.Column(db.String, nullable=False)
+    payout_queue = db.Column(db.String, nullable=False)
+    source_wallet_ref = db.Column(db.String, nullable=False)
+    hot_wallet_policy = db.Column(
+        db.Enum(PayoutRailHotWalletPolicy),
+        default=PayoutRailHotWalletPolicy.CURRENT_SIDECAR_SOURCE_WALLET,
+        nullable=False,
+    )
+    legacy_spend_policy = db.Column(
+        db.Enum(PayoutRailLegacySpendPolicy),
+        default=PayoutRailLegacySpendPolicy.BLOCK_AUTOMATIC_BYPASS,
+        nullable=False,
+    )
+    wallet_guard_key = db.Column(db.String, nullable=True)
+    execution_enabled = db.Column(db.Boolean, default=False, nullable=False)
+    token_contract = db.Column(db.String, nullable=True)
+    chain_id_or_network_id = db.Column(db.String, nullable=True)
+    decimals = db.Column(db.Integer, default=6, nullable=False)
+    callback_endpoint_id = db.Column(db.String, nullable=True)
+    contract_version = db.Column(
+        db.String,
+        default="usdt-payout-execution-v1",
+        nullable=False,
+    )
+
+
+class PayoutExecution(db.Model):
+    __table_args__ = (
+        db.UniqueConstraint(
+            "consumer",
+            "external_id",
+            name="uq_payout_execution_consumer_external_id",
+        ),
+        db.UniqueConstraint(
+            "sidecar_execution_id",
+            name="uq_payout_execution_sidecar_execution_id",
+        ),
+        db.UniqueConstraint(
+            "state_transition_id",
+            name="uq_payout_execution_state_transition_id",
+        ),
+        db.Index("ix_payout_execution_state_updated", "state", "updated_at"),
+        db.Index(
+            "ix_payout_execution_reconciliation",
+            "reconciliation_required",
+            "updated_at",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp(), index=True)
+    updated_at = db.Column(
+        db.DateTime,
+        default=db.func.current_timestamp(),
+        onupdate=db.func.current_timestamp(),
+    )
+    submitted_at = db.Column(db.DateTime, nullable=True)
+    broadcasted_at = db.Column(db.DateTime, nullable=True)
+    confirmed_at = db.Column(db.DateTime, nullable=True)
+    terminal_at = db.Column(db.DateTime, nullable=True)
+    last_state_occurred_at = db.Column(db.DateTime, nullable=True)
+    consumer = db.Column(db.String, nullable=False)
+    external_id = db.Column(db.String, nullable=False)
+    sidecar_execution_id = db.Column(db.String, nullable=True)
+    contract_version = db.Column(db.String, nullable=False)
+    event_version = db.Column(db.Integer, default=1, nullable=False)
+    state_transition_id = db.Column(db.String, nullable=False)
+    asset = db.Column(db.String, nullable=False)
+    network = db.Column(db.String, nullable=False)
+    crypto_id = db.Column(db.String, nullable=False)
+    sidecar_service = db.Column(db.String, nullable=False)
+    sidecar_symbol = db.Column(db.String, nullable=False)
+    payout_queue = db.Column(db.String, nullable=False)
+    source_wallet_ref = db.Column(db.String, nullable=False)
+    amount = db.Column(db.Numeric, nullable=False)
+    destination = db.Column(db.String, nullable=False)
+    request_hash = db.Column(db.String, nullable=False)
+    sidecar_payload_hash = db.Column(db.String, nullable=False)
+    callback_endpoint_id = db.Column(db.String, nullable=True)
+    state = db.Column(
+        db.Enum(PayoutExecutionState),
+        default=PayoutExecutionState.CREATED,
+        index=True,
+        nullable=False,
+    )
+    sidecar_state = db.Column(db.String, nullable=True)
+    sidecar_state_version = db.Column(db.Integer, nullable=True)
+    sidecar_state_transition_id = db.Column(db.String, nullable=True)
+    sidecar_state_updated_at = db.Column(db.DateTime, nullable=True)
+    last_sidecar_status_hash = db.Column(db.String, nullable=True)
+    last_sidecar_status_json = db.Column(db.Text, nullable=True)
+    last_sidecar_status_observed_at = db.Column(db.DateTime, nullable=True)
+    resolution_status = db.Column(
+        db.Enum(PayoutResolutionStatus),
+        default=PayoutResolutionStatus.UNRESOLVED,
+        nullable=False,
+    )
+    resolution_evidence_json = db.Column(db.Text, nullable=True)
+    resolution_evidence_hash = db.Column(db.String, nullable=True)
+    resolution_operator_note = db.Column(db.Text, nullable=True)
+    resolved_by = db.Column(db.String, nullable=True)
+    resolved_at = db.Column(db.DateTime, nullable=True)
+    failure_class = db.Column(db.Enum(PayoutFailureClass), nullable=True)
+    txids_json = db.Column(db.Text, nullable=True)
+    message_hashes_json = db.Column(db.Text, nullable=True)
+    error_code = db.Column(db.String, nullable=True)
+    error_message = db.Column(db.Text, nullable=True)
+    reconciliation_required = db.Column(db.Boolean, default=False, nullable=False)
+    dispatch_attempts = db.Column(db.Integer, default=0, nullable=False)
+    lease_owner = db.Column(db.String, nullable=True)
+    lease_token = db.Column(db.String, nullable=True)
+    lease_expires_at = db.Column(db.DateTime, nullable=True)
+    next_dispatch_at = db.Column(db.DateTime, nullable=True)
+
+
+class PayoutExecutionResolutionAudit(db.Model):
+    __table_args__ = (
+        db.Index(
+            "ix_payout_execution_resolution_audit_execution",
+            "payout_execution_id",
+            "created_at",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp(), index=True)
+    payout_execution_id = db.Column(
+        db.Integer,
+        db.ForeignKey("payout_execution.id"),
+        nullable=False,
+        index=True,
+    )
+    execution_id = db.Column(db.Integer, nullable=False, index=True)
+    consumer = db.Column(db.String, nullable=False, index=True)
+    external_id = db.Column(db.String, nullable=False, index=True)
+    action = db.Column(db.String, nullable=False)
+    previous_state = db.Column(db.String, nullable=True)
+    new_state = db.Column(db.String, nullable=False)
+    previous_resolution_status = db.Column(db.String, nullable=True)
+    resolution_status = db.Column(db.String, nullable=False)
+    operator_id = db.Column(db.String, nullable=False)
+    operator_note = db.Column(db.Text, nullable=True)
+    evidence_hash = db.Column(db.String, nullable=False)
+    evidence_json = db.Column(db.Text, nullable=False)
+    state_transition_id = db.Column(db.String, nullable=True)
+
+
+class PayoutCallbackEvent(db.Model):
+    __table_args__ = (
+        db.UniqueConstraint("event_id", name="uq_payout_callback_event_id"),
+        db.UniqueConstraint(
+            "execution_id",
+            "event_version",
+            name="uq_payout_callback_execution_event_version",
+        ),
+        db.UniqueConstraint(
+            "state_transition_id",
+            name="uq_payout_callback_state_transition_id",
+        ),
+        db.Index(
+            "ix_payout_callback_event_dispatch_due",
+            "dispatch_status",
+            "next_attempt_at",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp(), index=True)
+    updated_at = db.Column(
+        db.DateTime,
+        default=db.func.current_timestamp(),
+        onupdate=db.func.current_timestamp(),
+    )
+    event_id = db.Column(db.String, nullable=False)
+    payout_execution_id = db.Column(
+        db.Integer,
+        db.ForeignKey("payout_execution.id"),
+        nullable=False,
+        index=True,
+    )
+    execution_id = db.Column(db.Integer, nullable=False, index=True)
+    consumer = db.Column(db.String, nullable=True, index=True)
+    external_id = db.Column(db.String, nullable=False, index=True)
+    asset = db.Column(db.String, nullable=True)
+    network = db.Column(db.String, nullable=True)
+    event_version = db.Column(db.Integer, nullable=False)
+    state_transition_id = db.Column(db.String, nullable=False)
+    occurred_at = db.Column(db.DateTime, nullable=True)
+    callback_endpoint_id = db.Column(db.String, nullable=True)
+    payload_hash = db.Column(db.String, nullable=False)
+    raw_payload = db.Column(db.Text, nullable=False)
+    signature_key_id = db.Column(db.String, nullable=False)
+    signature_base = db.Column(db.Text, nullable=True)
+    signature_headers_json = db.Column(db.Text, nullable=True)
+    dispatch_status = db.Column(db.String, default="PENDING", nullable=False)
+    attempt_count = db.Column(db.Integer, default=0, nullable=False)
+    next_attempt_at = db.Column(db.DateTime, nullable=True)
+    last_attempt_at = db.Column(db.DateTime, nullable=True)
+    last_error = db.Column(db.Text, nullable=True)
+    received_at = db.Column(db.DateTime, default=db.func.current_timestamp(), index=True)
+    applied_at = db.Column(db.DateTime, nullable=True)
+    apply_result = db.Column(db.String, nullable=True)
+
+
+class PayoutAuthNonce(db.Model):
+    __table_args__ = (
+        db.UniqueConstraint(
+            "consumer",
+            "key_id",
+            "nonce",
+            name="uq_payout_auth_nonce_consumer_key_nonce",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    consumer = db.Column(db.String, nullable=False)
+    key_id = db.Column(db.String, nullable=False)
+    nonce = db.Column(db.String, nullable=False)
+    timestamp = db.Column(db.Integer, nullable=False)
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp(), index=True)
 
 
 class Payout(db.Model):

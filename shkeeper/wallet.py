@@ -49,6 +49,7 @@ from shkeeper.models import (
     Transaction,
 )
 from shkeeper.api.schemas.api_docs import metrics_doc
+from shkeeper.services.payout_metrics import update_payout_metrics
 
 prometheus_client.REGISTRY.unregister(prometheus_client.GC_COLLECTOR)
 prometheus_client.REGISTRY.unregister(prometheus_client.PLATFORM_COLLECTOR)
@@ -588,9 +589,16 @@ def metrics():
                 app.logger.warning(f"metrics() failed for {crypto.crypto}: {e}")
 
     # Shkeeper metrics
+    try:
+        update_payout_metrics()
+    except Exception as e:
+        app.logger.warning(f"payout metrics collection failed: {e}")
     crypto_metrics += prometheus_client.generate_latest().decode()
 
-    return _filter_metrics(crypto_metrics)
+    return Response(
+        _filter_metrics(crypto_metrics),
+        mimetype=prometheus_client.CONTENT_TYPE_LATEST,
+    )
 
 
 _FILTERED_METRIC_SUFFIXES = ("last_release_info", "fullnode_version_info")

@@ -6,7 +6,9 @@ from operator import itemgetter
 
 
 from werkzeug.datastructures import Headers
+from werkzeug.exceptions import BadRequest
 from flask import jsonify
+from flask import g
 from flask import request
 from flask import Response
 from flask import stream_with_context
@@ -19,6 +21,8 @@ from flask_sqlalchemy import sqlalchemy
 from shkeeper import requests
 from shkeeper.services.payout_service import PayoutService
 from shkeeper.services.payout_errors import PayoutRequestError
+from shkeeper.services.payout_execution_auth import payout_execution_auth_required
+from shkeeper.services.payout_execution_service import PayoutExecutionService
 from flask_smorest import Blueprint as SmorestBlueprint
 
 from shkeeper import db
@@ -48,7 +52,8 @@ from shkeeper.api.schemas.api_docs import (
     crypto_list_doc, crypto_balances_doc, payment_request_doc, quote_doc,
     balance_doc, payout_doc, task_status_doc, multipayout_doc, addresses_doc,
     transactions_doc, invoices_doc, tx_info_doc, decryption_key_doc, payout_status_doc,
-    transaction_callback_doc, payout_callback_doc
+    transaction_callback_doc, payout_callback_doc, payout_execution_create_doc,
+    payout_execution_status_doc, payout_execution_manual_resolution_doc
 )
 
 # =========================
@@ -78,11 +83,24 @@ def handle_request_error(func):
                 "code": e.code,
                 "message": str(e),
             }, e.status_code
+        except BadRequest as e:
+            app.logger.exception("Invalid payout request JSON")
+            return {
+                "status": "error",
+                "code": "INVALID_JSON",
+                "message": str(e),
+            }, 400
         except Exception as e:
             app.logger.exception("Payout error")
             return {"status": "error", "message": str(e)}, 500
 
     return wrapper
+
+
+def _current_operator_id():
+    user = getattr(g, "user", None)
+    return getattr(user, "username", None)
+
 
 @blp_v1.route("/crypto")
 @blp_v1.doc(**crypto_list_doc)
@@ -93,6 +111,49 @@ def list_crypto():
         "crypto": data["filtered"],
         "crypto_list": data["crypto_list"],
     }
+
+
+@blp_v1.post("/payout-executions")
+@blp_v1.doc(**payout_execution_create_doc)
+@payout_execution_auth_required
+@handle_request_error
+def create_payout_execution():
+    """Create an idempotent service-consumer payout execution."""
+    payload = request.get_json(force=True)
+    return PayoutExecutionService.submit(
+        g.payout_consumer,
+        payload,
+        key_id=g.payout_key_id,
+    ), 202
+
+
+@blp_v1.get("/payout-executions/<string:external_id>")
+@blp_v1.doc(**payout_execution_status_doc)
+@payout_execution_auth_required
+@handle_request_error
+def get_payout_execution(external_id):
+    """Return payout execution status scoped by authenticated consumer."""
+    return PayoutExecutionService.status(
+        g.payout_consumer,
+        external_id,
+        key_id=g.payout_key_id,
+    ), 200
+
+
+@blp_v1.post("/payout-executions/<int:execution_id>/manual-resolution")
+@blp_v1.doc(**payout_execution_manual_resolution_doc)
+@basic_auth_optional
+@login_required
+@handle_request_error
+def record_payout_execution_manual_resolution(execution_id):
+    """Record operator manual-resolution evidence for a payout execution."""
+    payload = request.get_json(force=True)
+    return PayoutExecutionService.record_manual_resolution(
+        execution_id,
+        payload,
+        operator_id=_current_operator_id(),
+    ), 200
+
 
 @blp_v1.get("/crypto/balances")
 @blp_v1.doc(**crypto_balances_doc)
@@ -471,7 +532,13 @@ def payout_status(crypto_name):
 def payout(crypto_name):
     """Make a single payout."""
     req = request.get_json(force=True)
-    return PayoutService.single_payout(crypto_name, req)
+    return PayoutService.single_payout(
+        crypto_name,
+        req,
+        spend_origin="manual_admin",
+        operator_id=_current_operator_id(),
+        audit_reason="legacy admin payout endpoint",
+    )
 
 @blp_v1.post("/payoutnotify/<string:crypto_name>")
 @blp_v1.doc(**payout_callback_doc)
@@ -719,7 +786,13 @@ def get_task(crypto_name, id):
 def multipayout(crypto_name):
     """Execute multi-payout with provided list of destinations and amounts."""
     payout_list = request.get_json(force=True)
-    return PayoutService.multiple_payout(crypto_name, payout_list)
+    return PayoutService.multiple_payout(
+        crypto_name,
+        payout_list,
+        spend_origin="manual_admin",
+        operator_id=_current_operator_id(),
+        audit_reason="legacy admin multipayout endpoint",
+    )
 
 @blp_v1.get("/<string:crypto_name>/addresses")
 @blp_v1.doc(**addresses_doc)

@@ -187,6 +187,23 @@ class PayoutServiceExternalIdTestCase(unittest.TestCase):
 
         self.assertEqual(Payout.query.count(), 0)
 
+    def test_non_finite_amount_is_rejected_before_sidecar_call(self):
+        crypto = self.register_crypto(FakeCrypto())
+
+        with self.assertRaises(PayoutRequestError) as cm:
+            PayoutService.single_payout(
+                "USDT",
+                {
+                    "destination": "TA",
+                    "amount": "NaN",
+                    "fee": "0",
+                },
+            )
+
+        self.assertEqual(cm.exception.code, "INVALID_AMOUNT")
+        self.assertEqual(crypto.calls, [])
+        self.assertEqual(Payout.query.count(), 0)
+
     def test_direct_payout_response_without_task_id_is_accepted(self):
         self.register_crypto(FakeCrypto(response={"result": "tx-1", "error": None}))
 

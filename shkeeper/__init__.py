@@ -116,6 +116,39 @@ def create_app(test_config=None):
             os.environ.get("AML_PENDING_TIMEOUT_SECONDS", "1800")
         ),
         AML_RETRY_DELAY_SECONDS=int(os.environ.get("AML_RETRY_DELAY_SECONDS", "120")),
+        PAYOUT_CONSUMER_KEYS_JSON=os.environ.get("PAYOUT_CONSUMER_KEYS_JSON"),
+        PAYOUT_SIDECAR_KEYS_JSON=os.environ.get("PAYOUT_SIDECAR_KEYS_JSON"),
+        PAYOUT_CALLBACK_KEYS_JSON=os.environ.get("PAYOUT_CALLBACK_KEYS_JSON"),
+        PAYOUT_CALLBACK_ENDPOINTS_JSON=os.environ.get(
+            "PAYOUT_CALLBACK_ENDPOINTS_JSON"
+        ),
+        PAYOUT_RAILS_JSON=os.environ.get("PAYOUT_RAILS_JSON"),
+        PAYOUT_AUTH_MAX_AGE_SECONDS=int(
+            os.environ.get("PAYOUT_AUTH_MAX_AGE_SECONDS", "300")
+        ),
+        PAYOUT_SIDECAR_REQUEST_TIMEOUT=int(
+            os.environ.get("PAYOUT_SIDECAR_REQUEST_TIMEOUT", "10")
+        ),
+        PAYOUT_EXECUTION_RECONCILER_INTERVAL=int(
+            os.environ.get("PAYOUT_EXECUTION_RECONCILER_INTERVAL", "5")
+        ),
+        PAYOUT_EXECUTION_RECONCILER_BATCH_SIZE=int(
+            os.environ.get("PAYOUT_EXECUTION_RECONCILER_BATCH_SIZE", "50")
+        ),
+        PAYOUT_EXECUTION_RECONCILER_ONCE=_env_bool(
+            "PAYOUT_EXECUTION_RECONCILER_ONCE",
+            False,
+        ),
+        PAYOUT_CALLBACK_DISPATCHER_INTERVAL=int(
+            os.environ.get("PAYOUT_CALLBACK_DISPATCHER_INTERVAL", "5")
+        ),
+        PAYOUT_CALLBACK_DISPATCHER_BATCH_SIZE=int(
+            os.environ.get("PAYOUT_CALLBACK_DISPATCHER_BATCH_SIZE", "50")
+        ),
+        PAYOUT_CALLBACK_DISPATCHER_ONCE=_env_bool(
+            "PAYOUT_CALLBACK_DISPATCHER_ONCE",
+            False,
+        ),
     )
 
     app.config.update(
@@ -147,6 +180,14 @@ def create_app(test_config=None):
     from shkeeper.wallet import bp_wallet
     api.register_blueprint(bp_wallet)
     api.register_blueprint(blp_v1)
+    from shkeeper.api.schemas.marshmallow_schemas import (
+        PayoutExecutionCallbackEventSchema,
+    )
+
+    api.spec.components.schema(
+        "PayoutExecutionCallbackEvent",
+        schema=PayoutExecutionCallbackEventSchema,
+    )
 
     # ensure the instance folder exists
     try:
@@ -167,6 +208,54 @@ def create_app(test_config=None):
     @app.get("/healthz")
     def healthz():
         return {"status": "ok"}
+
+    @app.cli.command("payout-execution-reconciler")
+    def payout_execution_reconciler_command():
+        import click
+        import time
+
+        interval = int(app.config.get("PAYOUT_EXECUTION_RECONCILER_INTERVAL", 5))
+        batch_size = int(app.config.get("PAYOUT_EXECUTION_RECONCILER_BATCH_SIZE", 50))
+        run_once = app.config.get("PAYOUT_EXECUTION_RECONCILER_ONCE", False)
+
+        while True:
+            with app.app_context():
+                from shkeeper.tasks import run_payout_execution_reconciler
+
+                processed = run_payout_execution_reconciler(batch_size=batch_size)
+            click.echo(f"payout execution reconciler processed {processed}")
+            if run_once:
+                return
+            time.sleep(max(interval, 1))
+
+    @app.cli.command("payout-callback-dispatcher")
+    def payout_callback_dispatcher_command():
+        import click
+        import time
+
+        interval = int(app.config.get("PAYOUT_CALLBACK_DISPATCHER_INTERVAL", 5))
+        batch_size = int(app.config.get("PAYOUT_CALLBACK_DISPATCHER_BATCH_SIZE", 50))
+        run_once = app.config.get("PAYOUT_CALLBACK_DISPATCHER_ONCE", False)
+
+        while True:
+            with app.app_context():
+                from shkeeper.tasks import run_payout_callback_dispatcher
+
+                processed = run_payout_callback_dispatcher(batch_size=batch_size)
+            click.echo(f"payout callback dispatcher processed {processed}")
+            if run_once:
+                return
+            time.sleep(max(interval, 1))
+
+    @app.cli.command("payout-rail-sync")
+    def payout_rail_sync_command():
+        import click
+
+        with app.app_context():
+            from shkeeper.services.payout_rail_sync import sync_payout_rails
+
+            synced = sync_payout_rails(app.config.get("PAYOUT_RAILS_JSON"))
+        click.echo(f"payout rails synced {synced}")
 
     scheduler.init_app(app)
 
@@ -208,17 +297,22 @@ def create_app(test_config=None):
     migrate.init_app(app, db)
     with app.app_context():
         # Create tables according to models
+        from sqlalchemy import inspect
+
         from .models import (
-            Wallet,
-            User,
-            PayoutDestination,
-            Invoice,
             ExchangeRate,
             Setting,
-            AmlCheck,
+            User,
+            Wallet,
         )
 
-        db.create_all()
+        inspector = inspect(db.engine)
+        has_user_table = "user" in inspector.get_table_names()
+        if has_user_table:
+            flask_migrate.upgrade()
+        else:
+            db.create_all()
+            flask_migrate.stamp(revision="head")
 
         # Create default user
         default_user = "admin"
@@ -230,10 +324,6 @@ def create_app(test_config=None):
             admin = User(username=default_user)
             db.session.add(admin)
             db.session.commit()
-
-            flask_migrate.stamp(revision="head")
-        else:
-            flask_migrate.upgrade()
 
         # Register rate sources
         import shkeeper.modules.rates
@@ -280,9 +370,10 @@ def create_app(test_config=None):
                         WalletEncryptionRuntimeStatus.success
                     )
 
-        from . import tasks
+        if not app.config.get("DISABLE_SCHEDULER"):
+            from . import tasks
 
-        scheduler.start()
+            scheduler.start()
 
         # end of with app.app_context():
 

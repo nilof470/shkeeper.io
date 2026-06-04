@@ -122,4 +122,16 @@ SECURITY_SCHEMES = {
         ),
         "scheme": "basic",
     },
+    "Payout_HMAC": {
+        "type": "apiKey",
+        "description": (
+            "Service-to-service payout HMAC authentication. Send "
+            "`X-Payout-Consumer`, `X-Payout-Key-Id`, `X-Payout-Timestamp`, "
+            "`X-Payout-Nonce`, and `X-Payout-Signature`. The signature is "
+            "HMAC-SHA256 over "
+            "`timestamp\\nnonce\\nMETHOD\\ncanonical_path\\ncanonical_query\\nbody_sha256`."
+        ),
+        "name": "X-Payout-Signature",
+        "in": "header",
+    },
 }

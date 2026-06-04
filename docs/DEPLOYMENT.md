@@ -1,4 +1,4 @@
-# SHKeeper TRON Deployment Runbook
+# SHKeeper Deployment Runbook
 
 This guide records the deployment procedure used for the re:Fee-enabled
 `tron-shkeeper` fork. It is written so the same process can be repeated for
@@ -14,9 +14,11 @@ Use the SHKeeper fork deployment model:
 
 - k3s on the VPS
 - Helm chart fork from `oci://ghcr.io/nilof470/helm-charts/shkeeper`
+- custom private GHCR image for the main `shkeeper.io` app
 - custom private GHCR image for `tron-shkeeper`
 - custom private GHCR image for `ton-shkeeper` when using the TON scanner
   resilience fix
+- custom private GHCR image for `ethereum-shkeeper` when using ETH-USDT payouts
 - Kubernetes `imagePullSecret` for the private image
 - re:Fee as the TRC20 energy provider
 
@@ -29,7 +31,46 @@ The chart runs the TRON sidecar as one pod. Base TRON has three containers:
 When `TRON_USDT_PAYOUT_RESOURCE_PROVISIONING_ENABLED=true`, the chart fork adds
 the fourth `tron-usdt-payouts` container in the same pod.
 
-## Local Release Build
+## Local SHKeeper Core Release Build
+
+Run from the local `shkeeper.io` checkout.
+
+```bash
+cd /Users/test/PycharmProjects/shkeeper.io
+git status --short --branch
+
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m unittest discover -s tests -v
+PYTHONPYCACHEPREFIX=/private/tmp/shkeeper-pycache .venv/bin/python -m compileall -q shkeeper tests
+git diff --check
+
+git add REPLACE_WITH_CHANGED_FILES
+git commit -m "REPLACE_WITH_RELEASE_COMMIT_MESSAGE"
+git push origin "$(git branch --show-current)"
+TAG=$(git rev-parse --short HEAD)
+echo "$TAG"
+```
+
+Do not build a release image from a dirty working tree. The Docker tag is the
+current commit short SHA, so commit and push the code first.
+
+Build and push the `linux/amd64` image:
+
+```bash
+docker login ghcr.io -u nilof470
+
+docker buildx build \
+  --platform linux/amd64 \
+  -t ghcr.io/nilof470/shkeeper.io:${TAG} \
+  --push .
+```
+
+Verify the remote manifest:
+
+```bash
+docker buildx imagetools inspect ghcr.io/nilof470/shkeeper.io:${TAG}
+```
+
+## Local TRON Release Build
 
 Run from the local repository checkout.
 
@@ -137,6 +178,163 @@ For the current fix branch the expected tag is:
 ghcr.io/nilof470/ton-shkeeper:d8f5c77
 ```
 
+## Local ETH Release Build
+
+Use this section for the owned `ethereum-shkeeper` fork. ETH-USDT client
+payouts must stay disabled until the forked image is built, pushed, referenced
+by Helm, and verified with the payout worker.
+
+Run from the local `ethereum-shkeeper` checkout:
+
+```bash
+cd /Users/test/PycharmProjects/ethereum-shkeeper
+git status --short --branch
+
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m unittest discover -s tests -v
+PYTHONPYCACHEPREFIX=/private/tmp/ethereum-shkeeper-pycache .venv/bin/python -m compileall -q app tests
+git diff --check
+
+git add REPLACE_WITH_CHANGED_FILES
+git commit -m "REPLACE_WITH_RELEASE_COMMIT_MESSAGE"
+git push origin "$(git branch --show-current)"
+TAG=$(git rev-parse --short HEAD)
+echo "$TAG"
+```
+
+Build and push the `linux/amd64` image to GHCR:
+
+```bash
+docker login ghcr.io -u nilof470
+
+docker buildx build \
+  --platform linux/amd64 \
+  -t ghcr.io/nilof470/ethereum-shkeeper:${TAG} \
+  --push .
+```
+
+Verify the remote manifest:
+
+```bash
+docker buildx imagetools inspect ghcr.io/nilof470/ethereum-shkeeper:${TAG}
+```
+
+## Local Helm Chart Release
+
+Run from the local `shkeeper-helm-charts` checkout after committing the chart
+changes that render payout workers, migration jobs, rail sync, services,
+network policies, and payout values.
+
+```bash
+cd /Users/test/PycharmProjects/shkeeper-helm-charts
+git status --short --branch
+
+python3 -m unittest tests/test_shkeeper_fork_chart.py -v
+helm lint charts/shkeeper
+
+git add REPLACE_WITH_CHANGED_FILES
+git commit -m "REPLACE_WITH_CHART_RELEASE_COMMIT_MESSAGE"
+git push origin "$(git branch --show-current)"
+```
+
+The payout chart version is recorded in `charts/shkeeper/Chart.yaml`. Do not
+reuse an already published OCI chart version for different chart contents.
+
+```bash
+PAYOUT_CHART_VERSION=$(awk '/^version:/ {print $2; exit}' charts/shkeeper/Chart.yaml)
+
+helm package charts/shkeeper --version "${PAYOUT_CHART_VERSION}"
+helm registry login ghcr.io -u nilof470
+helm push "shkeeper-${PAYOUT_CHART_VERSION}.tgz" oci://ghcr.io/nilof470/helm-charts
+
+helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper \
+  --version "${PAYOUT_CHART_VERSION}"
+```
+
+## USDT Payout Release Command Sequence
+
+Use this sequence after the SHKeeper core, ETH sidecar, TON sidecar, and TRON
+sidecar changes have been reviewed, committed, and pushed. Do not build images
+from uncommitted payout changes.
+
+The clean release gate also verifies that the checked-in Helm production
+overlay `image:` fields point at the exact clean commit tags below. Update and
+commit the Helm overlay image tags before running `--require-clean`.
+
+```bash
+SHKEEPER_TAG=$(git -C /Users/test/PycharmProjects/shkeeper.io rev-parse --short HEAD)
+TRON_TAG=$(git -C /Users/test/PycharmProjects/tron-shkeeper rev-parse --short HEAD)
+TON_TAG=$(git -C /Users/test/PycharmProjects/ton-shkeeper rev-parse --short HEAD)
+ETH_TAG=$(git -C /Users/test/PycharmProjects/ethereum-shkeeper rev-parse --short HEAD)
+PAYOUT_CHART_VERSION=$(awk '/^version:/ {print $2; exit}' /Users/test/PycharmProjects/shkeeper-helm-charts/charts/shkeeper/Chart.yaml)
+
+cd /Users/test/PycharmProjects/shkeeper-helm-charts
+perl -0pi -e "s|ghcr.io/nilof470/shkeeper.io:[A-Za-z0-9._-]+|ghcr.io/nilof470/shkeeper.io:${SHKEEPER_TAG}|g" \
+  charts/shkeeper/environments/values-prod-*-payout.yaml
+perl -0pi -e "s|ghcr.io/nilof470/tron-shkeeper:[A-Za-z0-9._-]+|ghcr.io/nilof470/tron-shkeeper:${TRON_TAG}|g" \
+  charts/shkeeper/environments/values-prod-tron-payout.yaml
+perl -0pi -e "s|ghcr.io/nilof470/ton-shkeeper:[A-Za-z0-9._-]+|ghcr.io/nilof470/ton-shkeeper:${TON_TAG}|g" \
+  charts/shkeeper/environments/values-prod-ton-payout.yaml
+perl -0pi -e "s|ghcr.io/nilof470/ethereum-shkeeper:[A-Za-z0-9._-]+|ghcr.io/nilof470/ethereum-shkeeper:${ETH_TAG}|g" \
+  charts/shkeeper/environments/values-prod-eth-payout.yaml
+git diff -- charts/shkeeper/environments
+
+git add charts/shkeeper/environments/values-prod-*-payout.yaml
+git commit -m "Update payout production image tags"
+git push origin "$(git branch --show-current)"
+
+cd /Users/test/PycharmProjects/shkeeper.io
+python3 scripts/verify_payout_release_gate.py --require-clean
+
+docker login ghcr.io -u nilof470
+
+docker buildx build --platform linux/amd64 \
+  -t ghcr.io/nilof470/shkeeper.io:${SHKEEPER_TAG} \
+  --push /Users/test/PycharmProjects/shkeeper.io
+
+docker buildx build --platform linux/amd64 \
+  -t ghcr.io/nilof470/tron-shkeeper:${TRON_TAG} \
+  --push /Users/test/PycharmProjects/tron-shkeeper
+
+docker buildx build --platform linux/amd64 \
+  -t ghcr.io/nilof470/ton-shkeeper:${TON_TAG} \
+  --push /Users/test/PycharmProjects/ton-shkeeper
+
+docker buildx build --platform linux/amd64 \
+  -t ghcr.io/nilof470/ethereum-shkeeper:${ETH_TAG} \
+  --push /Users/test/PycharmProjects/ethereum-shkeeper
+
+docker buildx imagetools inspect ghcr.io/nilof470/shkeeper.io:${SHKEEPER_TAG}
+docker buildx imagetools inspect ghcr.io/nilof470/tron-shkeeper:${TRON_TAG}
+docker buildx imagetools inspect ghcr.io/nilof470/ton-shkeeper:${TON_TAG}
+docker buildx imagetools inspect ghcr.io/nilof470/ethereum-shkeeper:${ETH_TAG}
+
+cd /Users/test/PycharmProjects/shkeeper-helm-charts
+python3 -m unittest tests/test_shkeeper_fork_chart.py -v
+helm lint charts/shkeeper
+helm package charts/shkeeper --version "${PAYOUT_CHART_VERSION}"
+helm registry login ghcr.io -u nilof470
+helm push "shkeeper-${PAYOUT_CHART_VERSION}.tgz" oci://ghcr.io/nilof470/helm-charts
+helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper \
+  --version "${PAYOUT_CHART_VERSION}"
+```
+
+Deploy the staged release with all rails still paused and kill-switched in
+`/root/shkeeper-payout-values.yaml`:
+
+```bash
+HELM_RELEASE_NAMESPACE=default
+
+helm upgrade --install -n "${HELM_RELEASE_NAMESPACE}" \
+  -f /root/shkeeper-values.yaml \
+  -f /root/shkeeper-payout-values.yaml \
+  shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
+  --version "${PAYOUT_CHART_VERSION}" --timeout 300s
+```
+
+Enable only one rail at a time after the restore-drill, smoke-payout, callback,
+and upstream ledger gates pass by changing that rail's `paused` and
+`killSwitch` values to `false`, then rerunning the same Helm upgrade command.
+
 ## VPS Preflight
 
 If replacing another stack such as Bitcart, stop and remove it before
@@ -198,7 +396,7 @@ read -s GHCR_TOKEN
 echo "$GHCR_TOKEN" | helm registry login ghcr.io -u nilof470 --password-stdin
 unset GHCR_TOKEN
 
-helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper --version 1.7.28-nilof470.1
+helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper --version 1.7.28-nilof470.2
 ```
 
 ## Namespace and Private GHCR Pull Secret
@@ -306,7 +504,7 @@ passwords, or Kubernetes secrets.
 
 The Helm chart fork is the source of truth for Kubernetes manifests. It is
 published as `oci://ghcr.io/nilof470/helm-charts/shkeeper` version
-`1.7.28-nilof470.1`. Use the published OCI chart directly for production
+`1.7.28-nilof470.2`. Use the published OCI chart directly for production
 deploys. This keeps a new VPS deployment independent from a local chart
 checkout.
 
@@ -322,7 +520,7 @@ clone, post-renderer, or PyYAML dependency. When
 `tron_usdt_fee_payouts`.
 
 ```bash
-helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper --version 1.7.28-nilof470.1
+helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper --version 1.7.28-nilof470.2
 ```
 
 The production deploy command is:
@@ -330,7 +528,7 @@ The production deploy command is:
 ```bash
 helm upgrade --install -n default -f /root/shkeeper-values.yaml \
   shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
-  --version 1.7.28-nilof470.1 --timeout 300s
+  --version 1.7.28-nilof470.2 --timeout 300s
 
 kubectl rollout status deployment/shkeeper-deployment -n shkeeper --timeout=180s
 kubectl rollout status deployment/tron-shkeeper -n shkeeper --timeout=180s
@@ -917,7 +1115,7 @@ Real deposits add more calls:
 ```bash
 helm upgrade --install -n default -f /root/shkeeper-values.yaml \
   shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
-  --version 1.7.28-nilof470.1 --timeout 300s
+  --version 1.7.28-nilof470.2 --timeout 300s
 ```
 
 Watch startup:
@@ -1062,6 +1260,257 @@ The periodic balance scanner also retries stuck balances. Default interval:
 BALANCES_RESCAN_PERIOD=3600
 ```
 
+## Payout Execution Production Overlay
+
+The payout execution chart API is generic. SHKeeper accepts only execution
+contract and routing configuration. Customer withdrawal policy belongs to the
+upstream product ledger. In this chart, `payouts.shkeeperWorkers.batchSize`
+controls only worker batch processing, and optional wallet balance values are
+alert thresholds.
+
+Create the payout secrets in the SHKeeper namespace. Keep the JSON files outside
+git and replace every secret value before applying.
+
+```bash
+cat >/root/payout-consumer-keys.json <<'JSON'
+{
+  "grither-pay": {
+    "grither-pay-to-shkeeper-v1": {
+      "secret": "REPLACE_WITH_GRITHER_TO_SHKEEPER_SECRET",
+      "rails": ["TRON-USDT", "TON-USDT", "ETH-USDT"]
+    }
+  }
+}
+JSON
+
+cat >/root/payout-sidecar-signing-keys.json <<'JSON'
+{
+  "grither-pay": {
+    "shkeeper-to-sidecars-v1": {
+      "secret": "REPLACE_WITH_SHKEEPER_TO_SIDECARS_SECRET",
+      "rails": ["TRON-USDT", "TON-USDT", "ETH-USDT"]
+    }
+  }
+}
+JSON
+
+cat >/root/payout-callback-keys.json <<'JSON'
+{
+  "grither-pay": {
+    "shkeeper-callbacks-v1": {
+      "secret": "REPLACE_WITH_SHKEEPER_CALLBACK_SECRET"
+    }
+  }
+}
+JSON
+
+cat >/root/payout-callback-endpoints.json <<'JSON'
+{
+  "grither-pay": {
+    "grither-pay-main": {
+      "url": "https://REPLACE_WITH_GRITHER_PAY_HOST/api/internal/shkeeper/payout-callbacks"
+    }
+  }
+}
+JSON
+```
+
+Apply or update the Kubernetes secrets:
+
+```bash
+SHKEEPER_WORKLOAD_NAMESPACE=shkeeper
+
+kubectl -n "${SHKEEPER_WORKLOAD_NAMESPACE}" create secret generic grither-prod-shkeeper-payout-consumer-keys \
+  --from-file=PAYOUT_CONSUMER_KEYS_JSON=/root/payout-consumer-keys.json \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl -n "${SHKEEPER_WORKLOAD_NAMESPACE}" create secret generic grither-prod-shkeeper-payout-sidecar-signing-keys \
+  --from-file=PAYOUT_SIDECAR_KEYS_JSON=/root/payout-sidecar-signing-keys.json \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl -n "${SHKEEPER_WORKLOAD_NAMESPACE}" create secret generic grither-prod-sidecar-payout-consumer-keys \
+  --from-file=PAYOUT_CONSUMER_KEYS_JSON=/root/payout-sidecar-signing-keys.json \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl -n "${SHKEEPER_WORKLOAD_NAMESPACE}" create secret generic grither-prod-shkeeper-payout-callback-keys \
+  --from-file=PAYOUT_CALLBACK_KEYS_JSON=/root/payout-callback-keys.json \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl -n "${SHKEEPER_WORKLOAD_NAMESPACE}" create secret generic grither-prod-shkeeper-payout-callback-endpoints \
+  --from-file=PAYOUT_CALLBACK_ENDPOINTS_JSON=/root/payout-callback-endpoints.json \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+Create `/root/shkeeper-payout-values.yaml`. This stages all three USDT rails
+and their workers, but keeps payout execution disabled in the SHKeeper rail
+catalog by leaving `paused: true` and `killSwitch: true`. Flip one rail at a
+time only after restore, smoke payout, callback, and upstream ledger gates pass.
+The sidecar `*.usdtPayoutWorker.enabled` flags below intentionally stay
+`false`: the chart derives the dedicated payout worker from
+`payouts.rails.*.enabled`, while the sidecar-local flag remains only a guarded
+manual override.
+
+```yaml
+dev:
+  imagePullSecrets:
+    - name: ghcr-nilof470
+
+shkeeper:
+  image: ghcr.io/nilof470/shkeeper.io:REPLACE_WITH_SHKEEPER_TAG
+
+payouts:
+  enabled: true
+  consumer: grither-pay
+  sidecarRequestTimeoutSeconds: 10
+  authMaxAgeSeconds: 300
+  networkPolicies:
+    enabled: true
+  storage:
+    mode: singleNodeSqlitePvc
+    claimName: shkeeper-db-claim
+    allowSeparateWorkerDeployments: true
+    backupRestoreEvidence: grither-prod-shkeeper-restore-drill-REPLACE-ME
+  migrations:
+    enabled: true
+  shkeeperWorkers:
+    enabled: true
+    intervalSeconds: 5
+    batchSize: 50
+  secrets:
+    consumerKeys:
+      name: grither-prod-shkeeper-payout-consumer-keys
+      key: PAYOUT_CONSUMER_KEYS_JSON
+    sidecarSigningKeys:
+      name: grither-prod-shkeeper-payout-sidecar-signing-keys
+      key: PAYOUT_SIDECAR_KEYS_JSON
+    sidecarConsumerKeys:
+      name: grither-prod-sidecar-payout-consumer-keys
+      key: PAYOUT_CONSUMER_KEYS_JSON
+    callbackKeys:
+      name: grither-prod-shkeeper-payout-callback-keys
+      key: PAYOUT_CALLBACK_KEYS_JSON
+    callbackEndpoints:
+      name: grither-prod-shkeeper-payout-callback-endpoints
+      key: PAYOUT_CALLBACK_ENDPOINTS_JSON
+  rails:
+    tronUsdt:
+      enabled: true
+      paused: true
+      killSwitch: true
+      queue: tron_usdt_fee_payouts
+      sidecarService: tron-shkeeper
+      sidecarSymbol: USDT
+      sourceWalletRef: fee_deposit
+      ownedImageRepository: ghcr.io/nilof470/tron-shkeeper
+      executionStateStorage: sidecar-db
+      callbackEndpointId: grither-pay-main
+      hotWalletMinimumBalance: ""
+      feeWalletMinimumBalance: ""
+      backupRestoreEvidence: grither-prod-tron-sidecar-restore-drill-REPLACE-ME
+    tonUsdt:
+      enabled: true
+      paused: true
+      killSwitch: true
+      queue: ton_usdt_payouts
+      sidecarService: ton-shkeeper
+      sidecarSymbol: TON-USDT
+      sourceWalletRef: fee_deposit
+      ownedImageRepository: ghcr.io/nilof470/ton-shkeeper
+      executionStateStorage: sidecar-db
+      callbackEndpointId: grither-pay-main
+      hotWalletMinimumBalance: ""
+      feeWalletMinimumBalance: ""
+      backupRestoreEvidence: grither-prod-ton-sidecar-restore-drill-REPLACE-ME
+    ethUsdt:
+      enabled: true
+      paused: true
+      killSwitch: true
+      queue: eth_usdt_payouts
+      sidecarService: ethereum-shkeeper
+      sidecarSymbol: ETH-USDT
+      sourceWalletRef: fee_deposit
+      ownedImageRepository: ghcr.io/nilof470/ethereum-shkeeper
+      executionStateStorage: sidecar-db
+      callbackEndpointId: grither-pay-main
+      hotWalletMinimumBalance: ""
+      feeWalletMinimumBalance: ""
+      backupRestoreEvidence: grither-prod-eth-sidecar-restore-drill-REPLACE-ME
+
+tron_shkeeper:
+  image: ghcr.io/nilof470/tron-shkeeper:REPLACE_WITH_TRON_TAG
+  usdtPayoutWorker:
+    enabled: false
+    queue: tron_usdt_fee_payouts
+    concurrency: 1
+    prefetchMultiplier: 1
+
+ton_shkeeper:
+  image: ghcr.io/nilof470/ton-shkeeper:REPLACE_WITH_TON_TAG
+  usdtPayoutWorker:
+    enabled: false
+    queue: ton_usdt_payouts
+    concurrency: 1
+    prefetchMultiplier: 1
+
+ethereum_shkeeper:
+  image: ghcr.io/nilof470/ethereum-shkeeper:REPLACE_WITH_ETH_TAG
+  usdtPayoutWorker:
+    enabled: false
+    queue: eth_usdt_payouts
+    concurrency: 1
+    prefetchMultiplier: 1
+```
+
+Apply the staged payout release with the published payout chart:
+
+```bash
+PAYOUT_CHART_VERSION=$(awk '/^version:/ {print $2; exit}' /Users/test/PycharmProjects/shkeeper-helm-charts/charts/shkeeper/Chart.yaml)
+HELM_RELEASE_NAMESPACE=default
+SHKEEPER_WORKLOAD_NAMESPACE=shkeeper
+
+helm upgrade --install -n "${HELM_RELEASE_NAMESPACE}" \
+  -f /root/shkeeper-values.yaml \
+  -f /root/shkeeper-payout-values.yaml \
+  shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
+  --version "${PAYOUT_CHART_VERSION}" --timeout 300s
+```
+
+Verify that workers and rail sync are rendered before enabling client traffic:
+
+```bash
+SHKEEPER_WORKLOAD_NAMESPACE=shkeeper
+
+kubectl rollout status deployment/shkeeper-deployment -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
+kubectl rollout status deployment/shkeeper-payout-execution-reconciler -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
+kubectl rollout status deployment/shkeeper-payout-callback-dispatcher -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
+kubectl rollout status deployment/tron-shkeeper -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
+kubectl rollout status deployment/ton-shkeeper -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
+kubectl rollout status deployment/ethereum-shkeeper -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
+
+kubectl get job -n "${SHKEEPER_WORKLOAD_NAMESPACE}" shkeeper-payout-rail-sync
+kubectl get pods -n "${SHKEEPER_WORKLOAD_NAMESPACE}" | grep -E 'shkeeper-payout|tron-shkeeper|ton-shkeeper|ethereum-shkeeper'
+
+kubectl get deployment tron-shkeeper -n "${SHKEEPER_WORKLOAD_NAMESPACE}" \
+  -o jsonpath='{.spec.template.spec.containers[*].name}{"\n"}'
+kubectl get deployment ton-shkeeper -n "${SHKEEPER_WORKLOAD_NAMESPACE}" \
+  -o jsonpath='{.spec.template.spec.containers[*].name}{"\n"}'
+kubectl get deployment ethereum-shkeeper -n "${SHKEEPER_WORKLOAD_NAMESPACE}" \
+  -o jsonpath='{.spec.template.spec.containers[*].name}{"\n"}'
+```
+
+Expected container names include:
+
+```text
+app tasks tron-usdt-payouts redis
+app tasks ton-usdt-payouts redis
+app tasks eth-usdt-payouts redis
+```
+
+After a rail passes production gates, enable only that rail by changing both
+`paused` and `killSwitch` to `false` for the selected rail, then run the same
+Helm upgrade command. Rails left paused or kill-switched remain present in
+Kubernetes but sync to `execution_enabled=false` in SHKeeper.
+
 ## Updating an Existing VPS
 
 After building and pushing a new image tag locally, update the VPS values file.
@@ -1072,31 +1521,49 @@ namespace, so confirm the release namespace first:
 helm list -A | grep shkeeper
 ```
 
-Update the main SHKeeper application image and the TRON sidecar image:
+For the payout release, update the main SHKeeper image and all payout sidecar
+images in `/root/shkeeper-payout-values.yaml`:
 
 ```bash
 SHKEEPER_TAG=REPLACE_WITH_SHKEEPER_TAG
 TRON_TAG=REPLACE_WITH_TRON_TAG
+TON_TAG=REPLACE_WITH_TON_TAG
+ETH_TAG=REPLACE_WITH_ETH_TAG
+PAYOUT_CHART_VERSION=REPLACE_WITH_PUBLISHED_PAYOUT_CHART_VERSION
+HELM_RELEASE_NAMESPACE=default
+SHKEEPER_WORKLOAD_NAMESPACE=shkeeper
 
-sed -i "s|image: ghcr.io/nilof470/shkeeper.io:.*|image: ghcr.io/nilof470/shkeeper.io:${SHKEEPER_TAG}|" /root/shkeeper-values.yaml
-sed -i "s|image: ghcr.io/nilof470/tron-shkeeper:.*|image: ghcr.io/nilof470/tron-shkeeper:${TRON_TAG}|" /root/shkeeper-values.yaml
+sed -i "s|image: ghcr.io/nilof470/shkeeper.io:.*|image: ghcr.io/nilof470/shkeeper.io:${SHKEEPER_TAG}|" /root/shkeeper-payout-values.yaml
+sed -i "s|image: ghcr.io/nilof470/tron-shkeeper:.*|image: ghcr.io/nilof470/tron-shkeeper:${TRON_TAG}|" /root/shkeeper-payout-values.yaml
+sed -i "s|image: ghcr.io/nilof470/ton-shkeeper:.*|image: ghcr.io/nilof470/ton-shkeeper:${TON_TAG}|" /root/shkeeper-payout-values.yaml
+sed -i "s|image: ghcr.io/nilof470/ethereum-shkeeper:.*|image: ghcr.io/nilof470/ethereum-shkeeper:${ETH_TAG}|" /root/shkeeper-payout-values.yaml
 
-grep -nE 'ghcr.io/nilof470/(shkeeper.io|tron-shkeeper)' /root/shkeeper-values.yaml
+grep -nE 'ghcr.io/nilof470/(shkeeper.io|tron-shkeeper|ton-shkeeper|ethereum-shkeeper)' /root/shkeeper-payout-values.yaml
 
-helm upgrade --install -n default -f /root/shkeeper-values.yaml \
+helm upgrade --install -n "${HELM_RELEASE_NAMESPACE}" \
+  -f /root/shkeeper-values.yaml \
+  -f /root/shkeeper-payout-values.yaml \
   shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
-  --version 1.7.28-nilof470.1 --timeout 300s
+  --version "${PAYOUT_CHART_VERSION}" --timeout 300s
 ```
 
 Verify the deployed images and rollout:
 
 ```bash
-kubectl rollout status deployment/shkeeper-deployment -n shkeeper --timeout=180s
-kubectl rollout status deployment/tron-shkeeper -n shkeeper --timeout=180s
-kubectl get deployment shkeeper-deployment -n shkeeper \
+SHKEEPER_WORKLOAD_NAMESPACE=shkeeper
+
+kubectl rollout status deployment/shkeeper-deployment -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
+kubectl rollout status deployment/tron-shkeeper -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
+kubectl rollout status deployment/ton-shkeeper -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
+kubectl rollout status deployment/ethereum-shkeeper -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
+kubectl rollout status deployment/shkeeper-payout-execution-reconciler -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
+kubectl rollout status deployment/shkeeper-payout-callback-dispatcher -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
+kubectl get deployment shkeeper-deployment -n "${SHKEEPER_WORKLOAD_NAMESPACE}" \
   -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
-kubectl get deployment tron-shkeeper -n shkeeper -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
-kubectl get pods -n shkeeper | grep tron-shkeeper
+kubectl get deployment tron-shkeeper -n "${SHKEEPER_WORKLOAD_NAMESPACE}" -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
+kubectl get deployment ton-shkeeper -n "${SHKEEPER_WORKLOAD_NAMESPACE}" -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
+kubectl get deployment ethereum-shkeeper -n "${SHKEEPER_WORKLOAD_NAMESPACE}" -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
+kubectl get pods -n "${SHKEEPER_WORKLOAD_NAMESPACE}" | grep -E 'shkeeper-payout|tron-shkeeper|ton-shkeeper|ethereum-shkeeper'
 ```
 
 Expected image output shape:
@@ -1104,7 +1571,11 @@ Expected image output shape:
 ```text
 ghcr.io/nilof470/shkeeper.io:TAG
 ghcr.io/nilof470/tron-shkeeper:TAG ghcr.io/nilof470/tron-shkeeper:TAG redis:7 ghcr.io/nilof470/tron-shkeeper:TAG
+ghcr.io/nilof470/ton-shkeeper:TAG ghcr.io/nilof470/ton-shkeeper:TAG ghcr.io/nilof470/ton-shkeeper:TAG redis:7
+ghcr.io/nilof470/ethereum-shkeeper:TAG ghcr.io/nilof470/ethereum-shkeeper:TAG ghcr.io/nilof470/ethereum-shkeeper:TAG redis:7
 tron-shkeeper ... 4/4 Running
+ton-shkeeper ... 4/4 Running
+ethereum-shkeeper ... 4/4 Running
 ```
 
 If `grep` does not print the expected image lines before the Helm upgrade, the
@@ -1113,11 +1584,13 @@ values and re-apply the image tags before upgrading:
 
 ```bash
 helm get values shkeeper -n default -o yaml > /root/shkeeper-values.yaml
+nano /root/shkeeper-payout-values.yaml
 ```
 
 Use the namespace shown by `helm list -A` if it is not `default`.
 
-Update the TON sidecar image:
+For a legacy TON scanner-only release without payout execution enabled, update
+the TON sidecar image in the base values file:
 
 ```bash
 NEW_TON_TAG=REPLACE_WITH_TON_TAG
@@ -1157,7 +1630,7 @@ helm list -A | grep shkeeper
 
 helm upgrade --install -n default -f /root/shkeeper-values.yaml \
   shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
-  --version 1.7.28-nilof470.1 --timeout 300s
+  --version 1.7.28-nilof470.2 --timeout 300s
 
 kubectl rollout status deployment/ton-shkeeper -n shkeeper --timeout=180s
 ```
@@ -1196,8 +1669,13 @@ Logs:
 
 ```bash
 kubectl logs -n shkeeper deployment/shkeeper-deployment --tail=100
+kubectl logs -n shkeeper deployment/shkeeper-payout-execution-reconciler --tail=120
+kubectl logs -n shkeeper deployment/shkeeper-payout-callback-dispatcher --tail=120
 kubectl logs -n shkeeper deployment/tron-shkeeper -c app --tail=120
 kubectl logs -n shkeeper deployment/tron-shkeeper -c tasks --tail=120
+kubectl logs -n shkeeper deployment/tron-shkeeper -c tron-usdt-payouts --tail=120
+kubectl logs -n shkeeper deployment/ton-shkeeper -c ton-usdt-payouts --tail=120
+kubectl logs -n shkeeper deployment/ethereum-shkeeper -c eth-usdt-payouts --tail=120
 ```
 
 Deployed image versions:
@@ -1211,6 +1689,18 @@ kubectl get deployment aml-shkeeper -n shkeeper \
 
 kubectl get deployment tron-shkeeper -n shkeeper \
   -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
+
+kubectl get deployment ton-shkeeper -n shkeeper \
+  -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
+
+kubectl get deployment ethereum-shkeeper -n shkeeper \
+  -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
+
+kubectl get deployment shkeeper-payout-execution-reconciler -n shkeeper \
+  -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
+
+kubectl get deployment shkeeper-payout-callback-dispatcher -n shkeeper \
+  -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
 ```
 
 Production env verification:
@@ -1218,6 +1708,18 @@ Production env verification:
 ```bash
 kubectl exec -n shkeeper deployment/shkeeper-deployment -- \
   env | grep -E '^(AML_ENABLED|AML_PROVIDER|AML_SHKEEPER_HOST|AML_SHKEEPER_USERNAME|AML_SHKEEPER_PASSWORD|AML_MAX_ACCEPT_SCORE|AML_MIN_CHECK_AMOUNT_FIAT|AML_SKIP_CUMULATIVE_LIMIT_FIAT|AML_SKIP_CUMULATIVE_WINDOW_HOURS|AML_PENDING_TIMEOUT_SECONDS|AML_RETRY_DELAY_SECONDS|REQUESTS_TIMEOUT)='
+
+kubectl exec -n shkeeper deployment/shkeeper-deployment -- sh -c \
+  'env | egrep "^(PAYOUT_SIDECAR_REQUEST_TIMEOUT|PAYOUT_CONSUMER_KEYS_JSON|PAYOUT_SIDECAR_KEYS_JSON|PAYOUT_CALLBACK_KEYS_JSON|PAYOUT_CALLBACK_ENDPOINTS_JSON)=" | sed -E "s/(JSON)=.*/\1=***MASKED***/"'
+
+kubectl exec -n shkeeper deployment/tron-shkeeper -c app -- sh -c \
+  'env | egrep "^(TRON_USDT_PAYOUT_QUEUE|TRON_USDT_PAYOUT_RESOURCE_PROVISIONING_ENABLED|PAYOUT_CONSUMER_KEYS_JSON|PAYOUT_AUTH_MAX_AGE_SECONDS|PAYOUT_EXECUTION_AUTO_ENQUEUE_ENABLED|PAYOUT_EXECUTION_PREFLIGHT_CHECKS_ENABLED)=" | sed -E "s/(JSON)=.*/\1=***MASKED***/"'
+
+kubectl exec -n shkeeper deployment/ton-shkeeper -c app -- sh -c \
+  'env | egrep "^(TON_USDT_PAYOUT_QUEUE|PAYOUT_CONSUMER_KEYS_JSON|PAYOUT_AUTH_MAX_AGE_SECONDS|PAYOUT_EXECUTION_AUTO_ENQUEUE_ENABLED|PAYOUT_EXECUTION_PREFLIGHT_CHECKS_ENABLED)=" | sed -E "s/(JSON)=.*/\1=***MASKED***/"'
+
+kubectl exec -n shkeeper deployment/ethereum-shkeeper -c app -- sh -c \
+  'env | egrep "^(ETH_USDT_PAYOUT_QUEUE|PAYOUT_CONSUMER_KEYS_JSON|PAYOUT_AUTH_MAX_AGE_SECONDS|PAYOUT_EXECUTION_AUTO_ENQUEUE_ENABLED|PAYOUT_EXECUTION_PREFLIGHT_CHECKS_ENABLED)=" | sed -E "s/(JSON)=.*/\1=***MASKED***/"'
 
 kubectl exec -n shkeeper deployment/aml-shkeeper -c app -- \
   env | grep -E '^(AML_USERNAME|AML_PASSWORD|CURRENT_PROVIDER|KOINKYT_HOST|KOINKYT_API_KEY|KOINKYT_RISK_PROFILE_IDS|AMLBOT_ACCESS_ID|AMLBOT_ACCESS_KEY|AMLBOT_ACCESS_POINT|AMLBOT_FLOW|PROVIDERS|AML_DEFAULT_THRESHOLD|CHECK_TIMEOUT_SECONDS|CHECK_RETRY_SECONDS|RECHECK_TXS_EVERY_SECONDS|RETRY_UNTIL_FAILED|KOINKYT_REQUEST_TIMEOUT_SECONDS|REQUESTS_TIMEOUT|REDIS_HOST|SQLALCHEMY_DATABASE_URI|SHKEEPER_BACKEND_KEY|SHKEEPER_HOST|DEBUG|LOGGING_LEVEL)='
