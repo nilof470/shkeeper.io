@@ -2,11 +2,13 @@ from collections import defaultdict
 import concurrent.futures
 import copy
 import csv
+import json
 from decimal import Decimal, InvalidOperation
 import inspect
 from io import StringIO
 import itertools
 import segno
+from types import SimpleNamespace
 
 from flask_smorest import Blueprint as SmorestBlueprint
 from flask import flash
@@ -19,6 +21,7 @@ from werkzeug.exceptions import abort
 from werkzeug.wrappers import Response
 from flask import current_app as app
 import prometheus_client
+from sqlalchemy import literal
 
 from shkeeper import db
 from shkeeper.auth import login_required, metrics_basic_auth
@@ -37,6 +40,9 @@ from shkeeper.models import (
     Invoice,
     InvoiceAddress,
     Payout,
+    PayoutExecution,
+    PayoutExecutionState,
+    PayoutResolutionStatus,
     PayoutDestination,
     PayoutStatus,
     PayoutTx,
@@ -68,6 +74,280 @@ def get_crypto_label(crypto_code: str) -> str:
             return getattr(c, "_display_name", None) or c.getname()
 
     return crypto_code
+
+
+class PayoutTablePagination:
+    def __init__(self, items, page, per_page, total):
+        self.items = items
+        self.page = page
+        self.per_page = per_page
+        self.total = total
+        self.pages = (total + per_page - 1) // per_page if total else 0
+        self.has_prev = page > 1
+        self.has_next = page < self.pages
+        self.prev_num = page - 1 if self.has_prev else None
+        self.next_num = page + 1 if self.has_next else None
+
+    def iter_pages(
+        self,
+        left_edge=2,
+        left_current=2,
+        right_current=4,
+        right_edge=2,
+    ):
+        last = 0
+        for num in range(1, self.pages + 1):
+            if (
+                num <= left_edge
+                or self.page - left_current - 1 < num < self.page + right_current
+                or num > self.pages - right_edge
+            ):
+                if last + 1 != num:
+                    yield None
+                yield num
+                last = num
+
+
+def _json_list(value):
+    if not value:
+        return []
+    try:
+        decoded = json.loads(value)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(decoded, list):
+        return []
+    return [str(item) for item in decoded if item]
+
+
+def _enum_name(value):
+    return value.name if hasattr(value, "name") else value
+
+
+def _payout_execution_success(state, resolution_status):
+    state = _enum_name(state)
+    resolution_status = _enum_name(resolution_status)
+    if state in (
+        PayoutExecutionState.CONFIRMED.name,
+        PayoutExecutionState.MANUAL_PAYOUT_COMPLETED.name,
+    ):
+        return "Yes"
+    if state in (
+        PayoutExecutionState.FAILED_PRE_BROADCAST.name,
+        PayoutExecutionState.FAILED_CHAIN_TERMINAL.name,
+    ):
+        return "No"
+    if resolution_status == PayoutResolutionStatus.CANCELLED_PRE_BROADCAST.name:
+        return "No"
+    return state.replace("_", " ").title() if state else ""
+
+
+def _artifact_items(record):
+    if record.source == "legacy":
+        values = str(record.txid_text or "").split(",")
+    else:
+        values = itertools.chain(
+            _json_list(record.txids_json),
+            _json_list(record.message_hashes_json),
+        )
+
+    seen = set()
+    artifacts = []
+    for value in values:
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        artifacts.append(SimpleNamespace(txid=value))
+    return artifacts
+
+
+def _payout_table_row(record):
+    if record.source == "legacy":
+        success = record.success or ""
+        error = record.error or ""
+    else:
+        success = _payout_execution_success(record.state, record.resolution_status)
+        error = record.error_message or record.error_code or ""
+
+    return SimpleNamespace(
+        created_at=record.created_at,
+        dest_addr=record.dest_addr,
+        amount=record.amount,
+        crypto=record.crypto,
+        crypto_label=get_crypto_label(record.crypto),
+        transactions=_artifact_items(record),
+        external_id=record.external_id,
+        success=success,
+        error=error,
+    )
+
+
+def _payout_table_query():
+    legacy_txids = (
+        db.session.query(
+            PayoutTx.payout_id.label("payout_id"),
+            db.func.group_concat(PayoutTx.txid).label("txid_text"),
+        )
+        .group_by(PayoutTx.payout_id)
+        .subquery()
+    )
+
+    legacy_query = (
+        db.session.query(
+            Payout.created_at.label("created_at"),
+            Payout.dest_addr.label("dest_addr"),
+            Payout.amount.label("amount"),
+            Payout.crypto.label("crypto"),
+            legacy_txids.c.txid_text.label("txid_text"),
+            literal(None).label("txids_json"),
+            literal(None).label("message_hashes_json"),
+            Payout.external_id.label("external_id"),
+            Payout.success.label("success"),
+            Payout.error.label("error"),
+            literal(None).label("state"),
+            literal(None).label("resolution_status"),
+            literal(None).label("error_code"),
+            literal(None).label("error_message"),
+            literal("legacy").label("source"),
+            literal(0).label("source_order"),
+            Payout.id.label("source_id"),
+        )
+        .outerjoin(legacy_txids, legacy_txids.c.payout_id == Payout.id)
+        .filter(
+            db.or_(
+                Payout.external_id.is_(None),
+                Payout.external_id == "",
+                ~db.session.query(PayoutExecution.id)
+                .filter(
+                    PayoutExecution.crypto_id == Payout.crypto,
+                    PayoutExecution.external_id == Payout.external_id,
+                )
+                .exists(),
+            )
+        )
+    )
+    execution_query = db.session.query(
+        PayoutExecution.created_at.label("created_at"),
+        PayoutExecution.destination.label("dest_addr"),
+        PayoutExecution.amount.label("amount"),
+        PayoutExecution.crypto_id.label("crypto"),
+        literal(None).label("txid_text"),
+        PayoutExecution.txids_json.label("txids_json"),
+        PayoutExecution.message_hashes_json.label("message_hashes_json"),
+        PayoutExecution.external_id.label("external_id"),
+        literal(None).label("success"),
+        literal(None).label("error"),
+        PayoutExecution.state.label("state"),
+        PayoutExecution.resolution_status.label("resolution_status"),
+        PayoutExecution.error_code.label("error_code"),
+        PayoutExecution.error_message.label("error_message"),
+        literal("execution").label("source"),
+        literal(1).label("source_order"),
+        PayoutExecution.id.label("source_id"),
+    )
+
+    legacy_query = _apply_payout_filters(
+        legacy_query,
+        Payout,
+        {
+            "dest_addr": Payout.dest_addr,
+            "amount": Payout.amount,
+            "crypto": Payout.crypto,
+            "created_at": Payout.created_at,
+        },
+    )
+    execution_query = _apply_payout_filters(
+        execution_query,
+        PayoutExecution,
+        {
+            "dest_addr": PayoutExecution.destination,
+            "amount": PayoutExecution.amount,
+            "crypto": PayoutExecution.crypto_id,
+            "created_at": PayoutExecution.created_at,
+        },
+    )
+
+    if "txid" in request.args:
+        txid = request.args["txid"]
+        legacy_query = legacy_query.filter(
+            db.session.query(PayoutTx.id)
+            .filter(PayoutTx.payout_id == Payout.id, PayoutTx.txid.contains(txid))
+            .exists()
+        )
+        execution_query = execution_query.filter(
+            db.or_(
+                PayoutExecution.txids_json.contains(txid),
+                PayoutExecution.message_hashes_json.contains(txid),
+            )
+        )
+
+    union_rows = legacy_query.union_all(execution_query).subquery()
+    return db.session.query(
+        union_rows.c.created_at,
+        union_rows.c.dest_addr,
+        union_rows.c.amount,
+        union_rows.c.crypto,
+        union_rows.c.txid_text,
+        union_rows.c.txids_json,
+        union_rows.c.message_hashes_json,
+        union_rows.c.external_id,
+        union_rows.c.success,
+        union_rows.c.error,
+        union_rows.c.state,
+        union_rows.c.resolution_status,
+        union_rows.c.error_code,
+        union_rows.c.error_message,
+        union_rows.c.source,
+        union_rows.c.source_order,
+        union_rows.c.source_id,
+    ).order_by(
+        union_rows.c.created_at.desc(),
+        union_rows.c.source_order.desc(),
+        union_rows.c.source_id.desc(),
+    )
+
+
+def _payout_table_page(query):
+    try:
+        page = int(request.args.get("page", 1))
+    except (TypeError, ValueError):
+        page = 1
+    page = max(page, 1)
+    per_page = 50
+    total = query.order_by(None).count()
+    records = query.limit(per_page).offset((page - 1) * per_page).all()
+    return PayoutTablePagination(
+        items=[_payout_table_row(record) for record in records],
+        page=page,
+        per_page=per_page,
+        total=total,
+    )
+
+
+def _payout_table_rows(query):
+    for record in query:
+        yield _payout_table_row(record)
+
+
+def _apply_payout_filters(query, model, field_map):
+    for arg in request.args:
+        if arg in ("page", "download", "from_date", "to_date", "txid"):
+            continue
+        if arg not in field_map:
+            continue
+        value = request.args[arg]
+        if value:
+            field = field_map[arg]
+            query = query.filter(db.cast(field, db.String).contains(value))
+
+    if request.args.get("from_date") and request.args.get("to_date"):
+        query = query.filter(
+            model.created_at >= f"{request.args['from_date']} 00:00:00",
+            model.created_at <= f"{request.args['to_date']} 24:00:00",
+        )
+
+    return query
+
 
 @bp_wallet.context_processor
 def inject_theme():
@@ -415,23 +695,7 @@ def payouts():
 @bp_wallet.get("/parts/payouts")
 @login_required
 def parts_payouts():
-    query = Payout.query
-
-    for arg in request.args:
-        if hasattr(Payout, arg):
-            field = getattr(Payout, arg)
-            query = query.filter(field.contains(request.args[arg]))
-
-    if "from_date" in request.args:
-        query = query.filter(
-            Payout.created_at >= f"{request.args['from_date']} 00:00:00",
-            Payout.created_at <= f"{request.args['to_date']} 24:00:00",
-        )
-
-    if "txid" in request.args:
-        query = query.join(PayoutTx).filter(
-            PayoutTx.txid.contains(request.args["txid"])
-        )
+    query = _payout_table_query()
 
     if "download" in request.args:
         if "csv" == request.args["download"]:
@@ -439,9 +703,18 @@ def parts_payouts():
             def generate():
                 data = StringIO()
                 w = csv.writer(data)
-                w.writerow(["Date", "Destination", "Amount", "Crypto", "Tx ID"])
-                records = query.order_by(Payout.id.desc()).all()
-                for r in records:
+                w.writerow(
+                    [
+                        "Date",
+                        "Destination",
+                        "Amount",
+                        "Crypto",
+                        "Tx ID",
+                        "ExternalId",
+                        "Success",
+                    ]
+                )
+                for r in _payout_table_rows(query):
                     w.writerow(
                         [
                             r.created_at,
@@ -449,6 +722,8 @@ def parts_payouts():
                             r.amount,
                             r.crypto,
                             " ".join([tx.txid for tx in r.transactions]),
+                            r.external_id or "",
+                            r.success or "",
                         ]
                     )
                     yield data.getvalue()
@@ -462,15 +737,11 @@ def parts_payouts():
 
         return response
 
-    pagination = query.order_by(Payout.id.desc()).paginate(per_page=50)
-
-    payouts = pagination.items
-    for p in payouts:
-        p.crypto_label = get_crypto_label(p.crypto)
+    pagination = _payout_table_page(query)
 
     return render_template(
         "wallet/payouts_table.j2",
-        payouts=payouts,
+        payouts=pagination.items,
         pagination=pagination,
     )
 
