@@ -9,7 +9,7 @@ The chart fork is published as a versioned OCI chart:
 
 ```text
 oci://ghcr.io/nilof470/helm-charts/shkeeper
-version: 1.7.28-nilof470.8
+version: 1.7.28-nilof470.9
 ```
 
 For a private GHCR package, log Helm in once on the VPS:
@@ -35,6 +35,21 @@ SHKeeper writers horizontally without replacing this storage mode.
 The wrapper applies the published chart fork directly. There is no local chart
 clone, post-renderer, or Python YAML dependency in the deploy path.
 
+Before the Helm upgrade, the wrapper verifies the payout sidecar auth Secret
+contract in the SHKeeper namespace. This catches the common deployment mistake
+where `PAYOUT_CONSUMER_KEYS_JSON` for ETH/TON sidecars is created from the
+SHKeeper signing JSON and payouts fail at runtime with
+`PAYOUT_AUTH_UNKNOWN_KEY`.
+
+Generate the sidecar consumer Secret payload from the signing payload instead
+of editing it by hand:
+
+```bash
+python3 /opt/shkeeper.io/deploy/shkeeper/payout-secret-guard.py render-sidecar-consumer \
+  --signing-keys-file /root/payout-sidecar-signing-keys.json \
+  --output /root/payout-sidecar-consumer-keys.json
+```
+
 ## Usage
 
 ```bash
@@ -51,9 +66,12 @@ RELEASE=shkeeper RELEASE_NS=default APP_NS=shkeeper \
 
 Use `CHART=/path/to/charts/shkeeper` only for local chart development. Use
 `CHART_VERSION=...` to pin a different published chart version.
+Use `PAYOUT_SECRET_PREFLIGHT=skip` only for a deployment that intentionally does
+not configure payout execution Secrets.
 
 The wrapper:
 
+- verifies the payout sidecar signing/consumer Secret contract;
 - runs `helm upgrade --install` against the chart fork without Helm wait mode;
 - waits for `shkeeper-deployment`;
 - waits for `tron-shkeeper` when TRON is enabled;
@@ -67,9 +85,12 @@ time out even when the relevant deployments are healthy.
 The equivalent direct Helm command is:
 
 ```bash
+python3 /opt/shkeeper.io/deploy/shkeeper/payout-secret-guard.py verify-cluster \
+  --namespace shkeeper
+
 helm upgrade --install -n default -f /root/shkeeper-values.yaml \
   shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
-  --version 1.7.28-nilof470.8 --timeout 300s
+  --version 1.7.28-nilof470.9 --timeout 300s
 
 /opt/shkeeper.io/deploy/shkeeper/verify-tron-usdt-payout-worker.py \
   --namespace shkeeper \

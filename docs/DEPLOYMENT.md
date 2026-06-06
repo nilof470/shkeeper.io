@@ -325,6 +325,10 @@ Deploy the staged release with all rails still paused and kill-switched in
 
 ```bash
 HELM_RELEASE_NAMESPACE=default
+SHKEEPER_WORKLOAD_NAMESPACE=shkeeper
+
+python3 /opt/shkeeper.io/deploy/shkeeper/payout-secret-guard.py verify-cluster \
+  --namespace "${SHKEEPER_WORKLOAD_NAMESPACE}"
 
 helm upgrade --install -n "${HELM_RELEASE_NAMESPACE}" \
   -f /root/shkeeper-values.yaml \
@@ -347,8 +351,8 @@ file.
 The TRON payout release validated on 2026-06-06 used these images:
 
 ```text
-ghcr.io/nilof470/shkeeper.io:aa8cb3e
-sha256:886d87b990c2756f0e9da3a63f54941bea28ae31fb4be2556558ad743854a5ea
+ghcr.io/nilof470/shkeeper.io:92263d0
+sha256:d0da1a8763f72c1e8f66a1755bc985d2c8414ac124c8335bfc71813fd29fc92e
 
 ghcr.io/nilof470/tron-shkeeper:038e93b
 sha256:7a98513490d7d84db0316a850d609dbd3b208c41e79c3043bb5cae8a7423d399
@@ -404,9 +408,9 @@ Before production upgrade, check for forbidden direct env keys:
 
 ```bash
 grep -n "TRON_USDT_PAYOUT_RESOURCE_PROVISIONING_ENABLED\|TRON_USDT_PAYOUT_QUEUE" \
-  /root/shkeeper-current-values.yaml /root/shkeeper-payout-values.yaml || true
+  /root/shkeeper-values.yaml /root/shkeeper-payout-values.yaml || true
 grep -n -A30 "tron_shkeeper:" \
-  /root/shkeeper-current-values.yaml /root/shkeeper-payout-values.yaml
+  /root/shkeeper-values.yaml /root/shkeeper-payout-values.yaml
 ```
 
 If any chart-owned key is under `tron_shkeeper.extraEnv`, remove it and express
@@ -420,18 +424,21 @@ Use the two-file deployment shape on production:
 ```bash
 export HELM_RELEASE_NAMESPACE=default
 export SHKEEPER_WORKLOAD_NAMESPACE=shkeeper
-export CHART_VERSION=1.7.28-nilof470.8
-export SHKEEPER_TAG=aa8cb3e
+export CHART_VERSION=1.7.28-nilof470.9
+export SHKEEPER_TAG=92263d0
 export TRON_TAG=038e93b
 
 helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper \
   --version "${CHART_VERSION}"
 
 perl -0pi -e "s|ghcr.io/nilof470/shkeeper.io:[A-Za-z0-9._-]+|ghcr.io/nilof470/shkeeper.io:${SHKEEPER_TAG}|g; s|ghcr.io/nilof470/tron-shkeeper:[A-Za-z0-9._-]+|ghcr.io/nilof470/tron-shkeeper:${TRON_TAG}|g" \
-  /root/shkeeper-current-values.yaml /root/shkeeper-payout-values.yaml
+  /root/shkeeper-values.yaml /root/shkeeper-payout-values.yaml
+
+python3 /opt/shkeeper.io/deploy/shkeeper/payout-secret-guard.py verify-cluster \
+  --namespace "${SHKEEPER_WORKLOAD_NAMESPACE}"
 
 helm upgrade --install -n "${HELM_RELEASE_NAMESPACE}" \
-  -f /root/shkeeper-current-values.yaml \
+  -f /root/shkeeper-values.yaml \
   -f /root/shkeeper-payout-values.yaml \
   shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
   --version "${CHART_VERSION}" \
@@ -517,7 +524,7 @@ Troubleshooting:
 
 - `Could not locate a version matching provided version string` means
   `CHART_VERSION` is empty or wrong. Export
-  `CHART_VERSION=1.7.28-nilof470.8` and confirm with `helm show chart`.
+  `CHART_VERSION=1.7.28-nilof470.9` and confirm with `helm show chart`.
 - `tron_shkeeper.extraEnv.TRON_USDT_PAYOUT_RESOURCE_PROVISIONING_ENABLED is
   managed by payouts.rails` means a chart-owned key is set directly under
   `tron_shkeeper.extraEnv`. Remove the direct env value from the values file.
@@ -589,7 +596,7 @@ read -s GHCR_TOKEN
 echo "$GHCR_TOKEN" | helm registry login ghcr.io -u nilof470 --password-stdin
 unset GHCR_TOKEN
 
-helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper --version 1.7.28-nilof470.8
+helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper --version 1.7.28-nilof470.9
 ```
 
 ## Namespace and Private GHCR Pull Secret
@@ -697,7 +704,7 @@ passwords, or Kubernetes secrets.
 
 The Helm chart fork is the source of truth for Kubernetes manifests. It is
 published as `oci://ghcr.io/nilof470/helm-charts/shkeeper` version
-`1.7.28-nilof470.8`. Use the published OCI chart directly for production
+`1.7.28-nilof470.9`. Use the published OCI chart directly for production
 deploys. This keeps a new VPS deployment independent from a local chart
 checkout.
 
@@ -713,15 +720,20 @@ active, the chart renders `tron-shkeeper` as the API/tasks/redis sidecar and
 `tron_usdt_fee_payouts`.
 
 ```bash
-helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper --version 1.7.28-nilof470.8
+helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper --version 1.7.28-nilof470.9
 ```
 
 The production deploy command is:
 
 ```bash
+SHKEEPER_WORKLOAD_NAMESPACE=shkeeper
+
+python3 /opt/shkeeper.io/deploy/shkeeper/payout-secret-guard.py verify-cluster \
+  --namespace "${SHKEEPER_WORKLOAD_NAMESPACE}"
+
 helm upgrade --install -n default -f /root/shkeeper-values.yaml \
   shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
-  --version 1.7.28-nilof470.8 --timeout 300s
+  --version 1.7.28-nilof470.9 --timeout 300s
 
 kubectl rollout status deployment/shkeeper-deployment -n shkeeper --timeout=180s
 kubectl rollout status deployment/tron-shkeeper -n shkeeper --timeout=180s
@@ -1312,7 +1324,7 @@ Real deposits add more calls:
 ```bash
 helm upgrade --install -n default -f /root/shkeeper-values.yaml \
   shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
-  --version 1.7.28-nilof470.8 --timeout 300s
+  --version 1.7.28-nilof470.9 --timeout 300s
 ```
 
 Watch startup:
@@ -1491,6 +1503,10 @@ cat >/root/payout-sidecar-signing-keys.json <<'JSON'
 }
 JSON
 
+python3 /opt/shkeeper.io/deploy/shkeeper/payout-secret-guard.py render-sidecar-consumer \
+  --signing-keys-file /root/payout-sidecar-signing-keys.json \
+  --output /root/payout-sidecar-consumer-keys.json
+
 cat >/root/payout-callback-keys.json <<'JSON'
 {
   "grither-pay": {
@@ -1513,6 +1529,11 @@ cat >/root/payout-callback-endpoints.json <<'JSON'
 JSON
 ```
 
+`/root/payout-sidecar-consumer-keys.json` is generated from the SHKeeper
+sidecar signing key. Do not point the sidecar consumer Secret at
+`/root/payout-sidecar-signing-keys.json`: ETH/TON sidecars require a top-level
+`keys` map and would reject payouts with `PAYOUT_AUTH_UNKNOWN_KEY`.
+
 Apply or update the Kubernetes secrets:
 
 ```bash
@@ -1527,7 +1548,7 @@ kubectl -n "${SHKEEPER_WORKLOAD_NAMESPACE}" create secret generic grither-prod-s
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n "${SHKEEPER_WORKLOAD_NAMESPACE}" create secret generic grither-prod-sidecar-payout-consumer-keys \
-  --from-file=PAYOUT_CONSUMER_KEYS_JSON=/root/payout-sidecar-signing-keys.json \
+  --from-file=PAYOUT_CONSUMER_KEYS_JSON=/root/payout-sidecar-consumer-keys.json \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n "${SHKEEPER_WORKLOAD_NAMESPACE}" create secret generic grither-prod-shkeeper-payout-callback-keys \
@@ -1537,6 +1558,9 @@ kubectl -n "${SHKEEPER_WORKLOAD_NAMESPACE}" create secret generic grither-prod-s
 kubectl -n "${SHKEEPER_WORKLOAD_NAMESPACE}" create secret generic grither-prod-shkeeper-payout-callback-endpoints \
   --from-file=PAYOUT_CALLBACK_ENDPOINTS_JSON=/root/payout-callback-endpoints.json \
   --dry-run=client -o yaml | kubectl apply -f -
+
+python3 /opt/shkeeper.io/deploy/shkeeper/payout-secret-guard.py verify-cluster \
+  --namespace "${SHKEEPER_WORKLOAD_NAMESPACE}"
 ```
 
 Create `/root/shkeeper-payout-values.yaml`. This stages all three USDT rails
@@ -1671,6 +1695,9 @@ PAYOUT_CHART_VERSION=$(awk '/^version:/ {print $2; exit}' /Users/test/PycharmPro
 HELM_RELEASE_NAMESPACE=default
 SHKEEPER_WORKLOAD_NAMESPACE=shkeeper
 
+python3 /opt/shkeeper.io/deploy/shkeeper/payout-secret-guard.py verify-cluster \
+  --namespace "${SHKEEPER_WORKLOAD_NAMESPACE}"
+
 helm upgrade --install -n "${HELM_RELEASE_NAMESPACE}" \
   -f /root/shkeeper-values.yaml \
   -f /root/shkeeper-payout-values.yaml \
@@ -1758,6 +1785,9 @@ sed -i "s|image: ghcr.io/nilof470/ton-shkeeper:.*|image: ghcr.io/nilof470/ton-sh
 sed -i "s|image: ghcr.io/nilof470/ethereum-shkeeper:.*|image: ghcr.io/nilof470/ethereum-shkeeper:${ETH_TAG}|" /root/shkeeper-payout-values.yaml
 
 grep -nE 'ghcr.io/nilof470/(shkeeper.io|tron-shkeeper|ton-shkeeper|ethereum-shkeeper)' /root/shkeeper-payout-values.yaml
+
+python3 /opt/shkeeper.io/deploy/shkeeper/payout-secret-guard.py verify-cluster \
+  --namespace "${SHKEEPER_WORKLOAD_NAMESPACE}"
 
 helm upgrade --install -n "${HELM_RELEASE_NAMESPACE}" \
   -f /root/shkeeper-values.yaml \
@@ -1859,7 +1889,7 @@ helm list -A | grep shkeeper
 
 helm upgrade --install -n default -f /root/shkeeper-values.yaml \
   shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
-  --version 1.7.28-nilof470.8 --timeout 300s
+  --version 1.7.28-nilof470.9 --timeout 300s
 
 kubectl rollout status deployment/ton-shkeeper -n shkeeper --timeout=180s
 ```

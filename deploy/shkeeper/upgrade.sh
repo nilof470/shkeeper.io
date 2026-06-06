@@ -3,7 +3,7 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 DEFAULT_CHART="oci://ghcr.io/nilof470/helm-charts/shkeeper"
-DEFAULT_CHART_VERSION="1.7.28-nilof470.8"
+DEFAULT_CHART_VERSION="1.7.28-nilof470.9"
 
 VALUES_FILE="${1:-/root/shkeeper-values.yaml}"
 RELEASE="${RELEASE:-shkeeper}"
@@ -20,6 +20,7 @@ if [ -z "${CHART_VERSION+x}" ]; then
     fi
 fi
 TIMEOUT="${TIMEOUT:-300s}"
+PAYOUT_SECRET_PREFLIGHT="${PAYOUT_SECRET_PREFLIGHT:-required}"
 
 usage() {
     cat <<'EOF'
@@ -31,8 +32,22 @@ Environment:
   RELEASE_NS    Helm release namespace. Default: default
   APP_NS        Kubernetes namespace with SHKeeper deployments. Default: shkeeper
   CHART         Helm chart path/ref. Default: oci://ghcr.io/nilof470/helm-charts/shkeeper
-  CHART_VERSION Helm chart version for remote chart refs. Default: 1.7.28-nilof470.8
+  CHART_VERSION Helm chart version for remote chart refs. Default: 1.7.28-nilof470.9
   TIMEOUT       kubectl rollout timeout. Default: 300s
+  PAYOUT_SECRET_PREFLIGHT
+                Payout sidecar secret contract preflight: required or skip.
+                Default: required
+  PAYOUT_SECRET_GUARD_REQUIRED_RAILS
+                Optional comma-separated rails to validate, for example ETH-USDT.
+                Default: all rails declared by PAYOUT_SIDECAR_KEYS_JSON
+  PAYOUT_SIDECAR_SIGNING_SECRET_NAME
+                Default: grither-prod-shkeeper-payout-sidecar-signing-keys
+  PAYOUT_SIDECAR_SIGNING_SECRET_KEY
+                Default: PAYOUT_SIDECAR_KEYS_JSON
+  PAYOUT_SIDECAR_CONSUMER_SECRET_NAME
+                Default: grither-prod-sidecar-payout-consumer-keys
+  PAYOUT_SIDECAR_CONSUMER_SECRET_KEY
+                Default: PAYOUT_CONSUMER_KEYS_JSON
 
 This is the guarded production deploy entry point for the SHKeeper fork.
 The Helm chart fork owns Kubernetes manifests; this script applies it, waits
@@ -63,6 +78,26 @@ elif ! printf '%s' "$CHART" | grep -Eq '^(oci://|[^/]+/[^/]+$)'; then
     echo "Use the default OCI chart ref, a repo/chart ref, or CHART=/path/to/charts/shkeeper." >&2
     exit 1
 fi
+
+case "$PAYOUT_SECRET_PREFLIGHT" in
+    required)
+        echo "==> Verifying payout sidecar secret contract"
+        python3 "$SCRIPT_DIR/payout-secret-guard.py" verify-cluster \
+            --namespace "$APP_NS" \
+            --signing-secret-name "${PAYOUT_SIDECAR_SIGNING_SECRET_NAME:-grither-prod-shkeeper-payout-sidecar-signing-keys}" \
+            --signing-secret-key "${PAYOUT_SIDECAR_SIGNING_SECRET_KEY:-PAYOUT_SIDECAR_KEYS_JSON}" \
+            --sidecar-consumer-secret-name "${PAYOUT_SIDECAR_CONSUMER_SECRET_NAME:-grither-prod-sidecar-payout-consumer-keys}" \
+            --sidecar-consumer-secret-key "${PAYOUT_SIDECAR_CONSUMER_SECRET_KEY:-PAYOUT_CONSUMER_KEYS_JSON}" \
+            --required-rails "${PAYOUT_SECRET_GUARD_REQUIRED_RAILS:-}"
+        ;;
+    skip)
+        echo "==> Skipping payout sidecar secret preflight"
+        ;;
+    *)
+        echo "ERROR: PAYOUT_SECRET_PREFLIGHT must be 'required' or 'skip'" >&2
+        exit 1
+        ;;
+esac
 
 echo "==> Helm upgrade: release=$RELEASE release_ns=$RELEASE_NS chart=$CHART values=$VALUES_FILE"
 if [ "$CHART_IS_LOCAL" = true ] || [ -z "$CHART_VERSION" ]; then
