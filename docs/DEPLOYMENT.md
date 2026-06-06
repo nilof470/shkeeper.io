@@ -131,7 +131,8 @@ sha256:48fbe2727c428965e4b74baccb29bd3aefcbdba3c0b15aeee57c134e04cef281
 ## Local TON Release Build
 
 Use this section for the forked `ton-shkeeper` image that contains the scanner
-resilience fix for transient Toncenter indexer `404` gaps.
+resilience fix for transient Toncenter indexer `404` gaps and canonical payout
+consumer key support.
 
 Run from the local `ton-shkeeper` checkout:
 
@@ -147,10 +148,10 @@ TAG=$(git rev-parse --short HEAD)
 echo "$TAG"
 ```
 
-The current fix commit is:
+The current payout-compatible TON fix commit is:
 
 ```text
-d8f5c77 fix: avoid retrying TON broadcasts
+3691bb3 Accept canonical payout consumer keys
 ```
 
 Do not build from a dirty working tree. The Docker tag should be the commit
@@ -177,7 +178,7 @@ Record the final image tag in release notes and in `/root/shkeeper-values.yaml`.
 For the current fix branch the expected tag is:
 
 ```text
-ghcr.io/nilof470/ton-shkeeper:d8f5c77
+ghcr.io/nilof470/ton-shkeeper:3691bb3
 ```
 
 ## Local ETH Release Build
@@ -218,6 +219,12 @@ Verify the remote manifest:
 
 ```bash
 docker buildx imagetools inspect ghcr.io/nilof470/ethereum-shkeeper:${TAG}
+```
+
+For the current payout auth fix the expected tag is:
+
+```text
+ghcr.io/nilof470/ethereum-shkeeper:5ebee87
 ```
 
 ## Local Helm Chart Release
@@ -1530,6 +1537,11 @@ The sidecar consumer Secret intentionally uses the same canonical key file as
 requests with that key id; TRON, TON, and ETH sidecars all validate the same
 nested `{consumer: {key_id: {secret, rails}}}` contract.
 
+Do not create the sidecar consumer Secret from `/root/payout-consumer-keys.json`
+and do not replace `shkeeper-to-sidecars-v1` with rail-local key ids such as
+`shkeeper-to-eth-v1`. If the SHKeeper signer key id and sidecar consumer key map
+drift, sidecar preflight fails before broadcast with `PAYOUT_AUTH_UNKNOWN_KEY`.
+
 Apply or update the Kubernetes secrets:
 
 ```bash
@@ -1554,6 +1566,12 @@ kubectl -n "${SHKEEPER_WORKLOAD_NAMESPACE}" create secret generic grither-prod-s
 kubectl -n "${SHKEEPER_WORKLOAD_NAMESPACE}" create secret generic grither-prod-shkeeper-payout-callback-endpoints \
   --from-file=PAYOUT_CALLBACK_ENDPOINTS_JSON=/root/payout-callback-endpoints.json \
   --dry-run=client -o yaml | kubectl apply -f -
+```
+
+Quickly verify the ETH sidecar sees the canonical key id:
+
+```bash
+kubectl -n "${SHKEEPER_WORKLOAD_NAMESPACE}" exec deployment/ethereum-shkeeper -c app -- python -c 'import os,json; d=json.loads(os.environ.get("PAYOUT_CONSUMER_KEYS_JSON","{}")).get("grither-pay",{}); print("rails =", d.get("rails")); print("keys =", list((d.get("keys") or {}).keys()) or [k for k,v in d.items() if isinstance(v,dict) and "secret" in v])'
 ```
 
 Create `/root/shkeeper-payout-values.yaml`. This stages all three USDT rails

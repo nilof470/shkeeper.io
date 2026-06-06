@@ -729,17 +729,11 @@ Secret payload shapes expected by SHKeeper/sidecars:
 ```json
 {
   "PAYOUT_SIDECAR_KEYS_JSON": {
-    "USDT": {
-      "key_id": "shkeeper-to-tron-v1",
-      "secret": "secret-from-secret-manager"
-    },
-    "TON-USDT": {
-      "key_id": "shkeeper-to-ton-v1",
-      "secret": "secret-from-secret-manager"
-    },
-    "ETH-USDT": {
-      "key_id": "shkeeper-to-eth-v1",
-      "secret": "secret-from-secret-manager"
+    "grither-pay": {
+      "shkeeper-to-sidecars-v1": {
+        "secret": "secret-from-secret-manager",
+        "rails": ["TRON-USDT", "TON-USDT", "ETH-USDT"]
+      }
     }
   }
 }

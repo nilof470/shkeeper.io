@@ -87,9 +87,10 @@ PRODUCTION_OVERLAY_IMAGE_FIELDS = {
     "ethereum": ("ethereum_shkeeper",),
 }
 ACTIVE_DEPLOY_CHART_VERSION_PATHS = [
-    ROOT / "deploy" / "shkeeper" / "upgrade.sh",
     ROOT / "deploy" / "shkeeper" / "README.md",
+    ROOT / "deploy" / "koinkyt-values.yaml",
     ROOT / "docs" / "DEPLOYMENT.md",
+    ROOT / "docs" / "KOINKYT_DEPLOY.md",
 ]
 STALE_FORK_CHART_VERSION_PATTERN = r"1\.7\.28-nilof470\.(?:1|2)\b"
 
@@ -377,7 +378,7 @@ def run_release_gate(args):
             + [("Helm lint", ["helm", "lint", "charts/shkeeper"], REPOS["helm"], None)]
         ):
             print(f"{label}: ({cwd}) {' '.join(command)}")
-        print("Chart version alignment: Helm Chart.yaml matches deploy wrapper and active deploy docs")
+        print("Chart version alignment: Helm Chart.yaml matches active direct-Helm deploy docs")
         print("Boundary checks: payout execution/routing allowlist tests, business-policy term scans, and product-specific runtime name scans")
         print(
             "Clean release scans: production payout overlay image fields match current git commits"

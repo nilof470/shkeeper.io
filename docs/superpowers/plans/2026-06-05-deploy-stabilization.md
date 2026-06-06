@@ -2,6 +2,10 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> Superseded on 2026-06-06: production deploys now use the published OCI Helm
+> chart directly with an explicit `--version`; `deploy/shkeeper/upgrade.sh` was
+> removed from the production path.
+
 **Goal:** Align the production deploy path with the current payout chart and document the accepted single-node SQLite operating mode.
 
 **Architecture:** Keep the runtime payout architecture unchanged. Treat the Helm chart fork as the Kubernetes source of truth, make the deploy wrapper verify the current separate TRON payout worker Deployment, and add a small release-gate check so stale chart versions do not return.

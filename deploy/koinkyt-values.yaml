@@ -1,8 +1,11 @@
 # Helm values snippet for the Koinkyt AML deployment.
 #
 # Merge these values into the private /root/shkeeper-values.yaml on the target
-# server. Then deploy with the same command used for the TRON/re:Fee rollout:
-#   /opt/shkeeper.io/deploy/shkeeper/upgrade.sh /root/shkeeper-values.yaml
+# server. Then deploy with the same direct Helm command used for the
+# TRON/re:Fee rollout:
+#   helm upgrade --install -n default -f /root/shkeeper-values.yaml \
+#     shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
+#     --version 1.7.28-nilof470.10 --timeout 300s
 #
 # Do not commit real API keys. Put the real KOINKYT_API_KEY only in the private
 # values file on the VPS or in a private secret store.

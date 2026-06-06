@@ -3,8 +3,7 @@
 This runbook deploys the Koinkyt AML integration on the existing SHKeeper
 k3s/Helm installation. The deployment shape intentionally matches the previous
 TRON/re:Fee process: keep one private `/root/shkeeper-values.yaml` per
-environment and deploy it through the SHKeeper production wrapper backed by the
-chart fork.
+environment and deploy it through the published Helm chart fork.
 
 Dev and prod should use the same image artifacts. The environment difference is
 only in the private values file: domain, enabled coins, API keys, risk profile
@@ -107,19 +106,16 @@ sed -i "s|image: ghcr.io/nilof470/shkeeper.io:.*|image: ghcr.io/nilof470/shkeepe
 sed -i "s|image: ghcr.io/nilof470/aml-shkeeper:.*|image: ghcr.io/nilof470/aml-shkeeper:${AML_TAG}|" /root/shkeeper-values.yaml
 ```
 
-After that, deploy through the SHKeeper production wrapper. This preserves
-fork-specific rendered invariants such as the TRON USDT payout worker:
+After that, deploy through the published OCI chart:
 
 ```bash
-cd /opt/shkeeper.io
-deploy/shkeeper/upgrade.sh /root/shkeeper-values.yaml
-```
+export CHART_VERSION=1.7.28-nilof470.10
 
-For a fresh VPS, the same wrapper installs the release if it is missing:
-
-```bash
-cd /opt/shkeeper.io
-deploy/shkeeper/upgrade.sh /root/shkeeper-values.yaml
+helm upgrade --install -n default \
+  -f /root/shkeeper-values.yaml \
+  shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
+  --version "${CHART_VERSION}" \
+  --timeout 300s
 ```
 
 ## Required VPS Secret For Private GHCR

@@ -1,6 +1,5 @@
 import importlib.util
 import py_compile
-import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -27,7 +26,6 @@ class ShkeeperDeployScriptsTestCase(unittest.TestCase):
     def test_scripts_exist(self):
         for name in (
             "verify-tron-usdt-payout-worker.py",
-            "upgrade.sh",
             "README.md",
         ):
             with self.subTest(name=name):
@@ -39,33 +37,26 @@ class ShkeeperDeployScriptsTestCase(unittest.TestCase):
             doraise=True,
         )
 
-    def test_upgrade_script_has_valid_shell_syntax(self):
-        subprocess.run(["sh", "-n", str(DEPLOY_DIR / "upgrade.sh")], check=True)
+    def test_production_deploy_path_is_direct_helm_not_wrapper(self):
+        deployment_doc = (ROOT / "docs" / "DEPLOYMENT.md").read_text()
+        deploy_readme = (DEPLOY_DIR / "README.md").read_text()
+        combined = deployment_doc + "\n" + deploy_readme
 
-    def test_upgrade_help_documents_worker_invariant(self):
-        result = subprocess.run(
-            ["sh", str(DEPLOY_DIR / "upgrade.sh"), "--help"],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+        self.assertFalse((DEPLOY_DIR / "upgrade.sh").exists())
+        self.assertIn("helm upgrade --install", combined)
+        self.assertIn("oci://ghcr.io/nilof470/helm-charts/shkeeper", combined)
+        self.assertIn("1.7.28-nilof470.10", combined)
+        self.assertNotIn("deploy/shkeeper/upgrade.sh", combined)
+        self.assertNotIn("--post-renderer", combined)
 
-        self.assertIn("production deploy entry point", result.stdout)
-        self.assertIn("TRON payout topology", result.stdout)
-        self.assertIn("chart fork", result.stdout)
-        self.assertNotIn("post-renderer", result.stdout)
+    def test_release_gate_tracks_direct_helm_docs_not_wrapper(self):
+        release_gate = (ROOT / "scripts" / "verify_payout_release_gate.py").read_text()
 
-    def test_upgrade_script_uses_chart_fork_not_post_renderer(self):
-        script = (DEPLOY_DIR / "upgrade.sh").read_text()
-
-        self.assertIn("oci://ghcr.io/nilof470/helm-charts/shkeeper", script)
-        self.assertIn('DEFAULT_CHART_VERSION="1.7.28-nilof470.10"', script)
-        self.assertIn("deployment/tron-usdt-payouts", script)
-        self.assertIn("CHART_VERSION", script)
-        self.assertNotIn("--atomic", script)
-        self.assertNotIn("--wait", script)
-        self.assertNotIn("--post-renderer", script)
-        self.assertNotIn("python3 -c 'import yaml'", script)
+        self.assertIn("deploy\" / \"shkeeper\" / \"README.md", release_gate)
+        self.assertIn("docs\" / \"DEPLOYMENT.md", release_gate)
+        self.assertIn("direct-Helm deploy docs", release_gate)
+        self.assertNotIn("upgrade.sh", release_gate)
+        self.assertNotIn("deploy wrapper", release_gate)
 
     def test_deployment_docs_use_current_published_artifacts_and_values_files(self):
         deployment_doc = (ROOT / "docs" / "DEPLOYMENT.md").read_text()
@@ -74,6 +65,9 @@ class ShkeeperDeployScriptsTestCase(unittest.TestCase):
 
         self.assertIn("1.7.28-nilof470.10", combined)
         self.assertIn("ghcr.io/nilof470/shkeeper.io:92263d0", deployment_doc)
+        self.assertIn("ghcr.io/nilof470/ton-shkeeper:3691bb3", deployment_doc)
+        self.assertIn("ghcr.io/nilof470/ethereum-shkeeper:5ebee87", deployment_doc)
+        self.assertIn("shkeeper-to-sidecars-v1", deployment_doc)
         self.assertIn(
             "sha256:d0da1a8763f72c1e8f66a1755bc985d2c8414ac124c8335bfc71813fd29fc92e",
             deployment_doc,
