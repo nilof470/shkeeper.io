@@ -337,6 +337,197 @@ Enable only one rail at a time after the restore-drill, smoke-payout, callback,
 and upstream ledger gates pass by changing that rail's `paused` and
 `killSwitch` values to `false`, then rerunning the same Helm upgrade command.
 
+### Production TRON Payout Activation
+
+Persist production payout activation in `/root/shkeeper-payout-values.yaml`.
+Do not rely on `--set` for normal production operation; use `--set` only for a
+temporary emergency override that is immediately copied back into the values
+file.
+
+The TRON payout release validated on 2026-06-06 used these images:
+
+```text
+ghcr.io/nilof470/shkeeper.io:aa8cb3e
+sha256:886d87b990c2756f0e9da3a63f54941bea28ae31fb4be2556558ad743854a5ea
+
+ghcr.io/nilof470/tron-shkeeper:038e93b
+sha256:7a98513490d7d84db0316a850d609dbd3b208c41e79c3043bb5cae8a7423d399
+```
+
+The persistent TRON payout block must be present in
+`/root/shkeeper-payout-values.yaml`:
+
+```yaml
+payouts:
+  enabled: true
+  rails:
+    tronUsdt:
+      enabled: true
+      paused: false
+      killSwitch: false
+      queue: tron_usdt_fee_payouts
+      sidecarService: tron-shkeeper
+      sidecarSymbol: USDT
+      sourceWalletRef: fee_deposit
+      ownedImageRepository: ghcr.io/nilof470/tron-shkeeper
+      executionStateStorage: sidecar-db
+      callbackEndpointId: grither-pay-main
+```
+
+Runtime tuning that belongs to the TRON sidecar can stay under
+`tron_shkeeper.extraEnv`:
+
+```yaml
+tron_shkeeper:
+  extraEnv:
+    PAYOUT_RESOURCE_POST_ACTIVE_RECHECK_ATTEMPTS: "10"
+    PAYOUT_RESOURCE_POST_ACTIVE_RECHECK_SLEEP_SEC: "2"
+    BLOCK_SCANNER_MAX_BLOCK_CHUNK_SIZE: "5"
+    BLOCK_SCANNER_INTERVAL_TIME: "1"
+    BLOCK_SCANNER_STATS_LOG_PERIOD: "60"
+```
+
+Do not set chart-owned payout env keys directly in `tron_shkeeper.extraEnv`.
+The chart renders them from `payouts.rails` and Kubernetes Secret references.
+If these keys are present directly, Helm must fail before deployment:
+
+```text
+TRON_USDT_PAYOUT_RESOURCE_PROVISIONING_ENABLED
+TRON_USDT_PAYOUT_QUEUE
+PAYOUT_CONSUMER_KEYS_JSON
+PAYOUT_AUTH_MAX_AGE_SECONDS
+PAYOUT_EXECUTION_AUTO_ENQUEUE_ENABLED
+PAYOUT_EXECUTION_PREFLIGHT_CHECKS_ENABLED
+```
+
+Before production upgrade, check for forbidden direct env keys:
+
+```bash
+grep -n "TRON_USDT_PAYOUT_RESOURCE_PROVISIONING_ENABLED\|TRON_USDT_PAYOUT_QUEUE" \
+  /root/shkeeper-current-values.yaml /root/shkeeper-payout-values.yaml || true
+grep -n -A30 "tron_shkeeper:" \
+  /root/shkeeper-current-values.yaml /root/shkeeper-payout-values.yaml
+```
+
+If any chart-owned key is under `tron_shkeeper.extraEnv`, remove it and express
+the setting through `payouts.rails` or the chart's payout secret references
+instead. `PAYOUT_CONSUMER_KEYS_JSON` is valid as
+`payouts.secrets.sidecarConsumerKeys.key`; it is only invalid as a direct sidecar
+`extraEnv` value.
+
+Use the two-file deployment shape on production:
+
+```bash
+export HELM_RELEASE_NAMESPACE=default
+export SHKEEPER_WORKLOAD_NAMESPACE=shkeeper
+export CHART_VERSION=1.7.28-nilof470.8
+export SHKEEPER_TAG=aa8cb3e
+export TRON_TAG=038e93b
+
+helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper \
+  --version "${CHART_VERSION}"
+
+perl -0pi -e "s|ghcr.io/nilof470/shkeeper.io:[A-Za-z0-9._-]+|ghcr.io/nilof470/shkeeper.io:${SHKEEPER_TAG}|g; s|ghcr.io/nilof470/tron-shkeeper:[A-Za-z0-9._-]+|ghcr.io/nilof470/tron-shkeeper:${TRON_TAG}|g" \
+  /root/shkeeper-current-values.yaml /root/shkeeper-payout-values.yaml
+
+helm upgrade --install -n "${HELM_RELEASE_NAMESPACE}" \
+  -f /root/shkeeper-current-values.yaml \
+  -f /root/shkeeper-payout-values.yaml \
+  shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
+  --version "${CHART_VERSION}" \
+  --timeout 300s
+```
+
+Do not use `--no-hooks` for the normal payout deployment path. The chart hooks
+run payout migrations and rail sync jobs; skipping them can leave a release with
+new Deployments but stale payout schema or rail state.
+
+Verify the release after the upgrade:
+
+```bash
+helm status shkeeper -n "${HELM_RELEASE_NAMESPACE}"
+helm history shkeeper -n "${HELM_RELEASE_NAMESPACE}" --max 5
+
+helm get values shkeeper -n "${HELM_RELEASE_NAMESPACE}" -a | grep -A20 "tronUsdt:"
+
+kubectl rollout status deployment/shkeeper-deployment \
+  -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
+kubectl rollout status deployment/tron-shkeeper \
+  -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
+kubectl rollout status deployment/shkeeper-payout-execution-reconciler \
+  -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
+kubectl rollout status deployment/shkeeper-payout-callback-dispatcher \
+  -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
+kubectl rollout status deployment/tron-usdt-payouts \
+  -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
+
+kubectl get deploy -A | grep -E 'tron-usdt-payouts|tron-shkeeper|shkeeper-payout'
+kubectl get pods -n "${SHKEEPER_WORKLOAD_NAMESPACE}" -o wide
+```
+
+The expected active TRON payout values are:
+
+```yaml
+enabled: true
+paused: false
+killSwitch: false
+queue: tron_usdt_fee_payouts
+```
+
+Check the deployed image tags:
+
+```bash
+kubectl get deployment shkeeper-deployment -n "${SHKEEPER_WORKLOAD_NAMESPACE}" \
+  -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
+kubectl get deployment tron-shkeeper -n "${SHKEEPER_WORKLOAD_NAMESPACE}" \
+  -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
+kubectl get deployment tron-usdt-payouts -n "${SHKEEPER_WORKLOAD_NAMESPACE}" \
+  -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
+```
+
+Check payout logs:
+
+```bash
+kubectl logs deployment/tron-usdt-payouts \
+  -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --tail=100
+kubectl logs deployment/shkeeper-payout-execution-reconciler \
+  -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --tail=100
+kubectl logs deployment/shkeeper-payout-callback-dispatcher \
+  -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --tail=100
+kubectl logs deployment/tron-shkeeper \
+  -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --all-containers --tail=100
+```
+
+Finish the production gate with a small Grither Pay TRON USDT payout. Confirm
+the user-facing payout is created from the mini app, the Grither Pay backend
+creates the SHKeeper payout execution, `tron-usdt-payouts` sends the transaction,
+the transaction appears on-chain, and the callback/status flow reaches Grither
+Pay.
+
+After a successful smoke payout, save the working server state:
+
+```bash
+helm get values shkeeper -n "${HELM_RELEASE_NAMESPACE}" -a \
+  > /root/shkeeper-values-working-$(date +%Y%m%d%H%M%S).yaml
+kubectl get deploy -n "${SHKEEPER_WORKLOAD_NAMESPACE}" -o wide \
+  > /root/shkeeper-deployments-working-$(date +%Y%m%d%H%M%S).txt
+```
+
+Troubleshooting:
+
+- `Could not locate a version matching provided version string` means
+  `CHART_VERSION` is empty or wrong. Export
+  `CHART_VERSION=1.7.28-nilof470.8` and confirm with `helm show chart`.
+- `tron_shkeeper.extraEnv.TRON_USDT_PAYOUT_RESOURCE_PROVISIONING_ENABLED is
+  managed by payouts.rails` means a chart-owned key is set directly under
+  `tron_shkeeper.extraEnv`. Remove the direct env value from the values file.
+- `deployment/tron-usdt-payouts not found` means either the workload namespace is
+  wrong or the final Helm values still have `payouts.rails.tronUsdt.paused=true`
+  or `payouts.rails.tronUsdt.killSwitch=true`. Check with
+  `helm get values shkeeper -n "${HELM_RELEASE_NAMESPACE}" -a | grep -A20 "tronUsdt:"`,
+  then fix `/root/shkeeper-payout-values.yaml` and rerun the same
+  Helm upgrade.
+
 ## VPS Preflight
 
 If replacing another stack such as Bitcart, stop and remove it before
