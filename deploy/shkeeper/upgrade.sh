@@ -3,7 +3,7 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 DEFAULT_CHART="oci://ghcr.io/nilof470/helm-charts/shkeeper"
-DEFAULT_CHART_VERSION="1.7.28-nilof470.1"
+DEFAULT_CHART_VERSION="1.7.28-nilof470.8"
 
 VALUES_FILE="${1:-/root/shkeeper-values.yaml}"
 RELEASE="${RELEASE:-shkeeper}"
@@ -31,12 +31,12 @@ Environment:
   RELEASE_NS    Helm release namespace. Default: default
   APP_NS        Kubernetes namespace with SHKeeper deployments. Default: shkeeper
   CHART         Helm chart path/ref. Default: oci://ghcr.io/nilof470/helm-charts/shkeeper
-  CHART_VERSION Helm chart version for remote chart refs. Default: 1.7.28-nilof470.1
+  CHART_VERSION Helm chart version for remote chart refs. Default: 1.7.28-nilof470.8
   TIMEOUT       kubectl rollout timeout. Default: 300s
 
 This is the guarded production deploy entry point for the SHKeeper fork.
 The Helm chart fork owns Kubernetes manifests; this script applies it, waits
-for rollouts, and verifies the TRON USDT payout worker when provisioning is enabled.
+for rollouts, and verifies the TRON payout topology when the TRON sidecar is enabled.
 EOF
 }
 
@@ -80,13 +80,21 @@ if kubectl -n "$APP_NS" get deployment/tron-shkeeper >/dev/null 2>&1; then
     echo "==> Waiting for TRON sidecar rollout"
     kubectl -n "$APP_NS" rollout status deployment/tron-shkeeper --timeout="$TIMEOUT"
 
-    echo "==> Verifying TRON USDT payout worker"
+    if kubectl -n "$APP_NS" get deployment/tron-usdt-payouts >/dev/null 2>&1; then
+        echo "==> Waiting for TRON USDT payout worker rollout"
+        kubectl -n "$APP_NS" rollout status deployment/tron-usdt-payouts --timeout="$TIMEOUT"
+    else
+        echo "==> TRON USDT payout worker deployment is not rendered; skipping worker rollout wait"
+    fi
+
+    echo "==> Verifying TRON payout topology"
     python3 "$SCRIPT_DIR/verify-tron-usdt-payout-worker.py" \
         --namespace "$APP_NS" \
-        --deployment tron-shkeeper
+        --deployment tron-shkeeper \
+        --worker-deployment tron-usdt-payouts
 else
     echo "==> TRON sidecar is disabled; skipping TRON worker verification"
 fi
 
-kubectl -n "$APP_NS" get pods | grep tron-shkeeper || true
+kubectl -n "$APP_NS" get pods | grep -E 'tron-shkeeper|tron-usdt-payouts' || true
 echo "OK: SHKeeper deployment completed"

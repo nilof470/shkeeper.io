@@ -51,7 +51,7 @@ class ShkeeperDeployScriptsTestCase(unittest.TestCase):
         )
 
         self.assertIn("production deploy entry point", result.stdout)
-        self.assertIn("TRON USDT payout worker", result.stdout)
+        self.assertIn("TRON payout topology", result.stdout)
         self.assertIn("chart fork", result.stdout)
         self.assertNotIn("post-renderer", result.stdout)
 
@@ -59,6 +59,8 @@ class ShkeeperDeployScriptsTestCase(unittest.TestCase):
         script = (DEPLOY_DIR / "upgrade.sh").read_text()
 
         self.assertIn("oci://ghcr.io/nilof470/helm-charts/shkeeper", script)
+        self.assertIn('DEFAULT_CHART_VERSION="1.7.28-nilof470.8"', script)
+        self.assertIn("deployment/tron-usdt-payouts", script)
         self.assertIn("CHART_VERSION", script)
         self.assertNotIn("--atomic", script)
         self.assertNotIn("--wait", script)
@@ -117,6 +119,85 @@ class ShkeeperDeployScriptsTestCase(unittest.TestCase):
                 2,
             )
         )
+
+    def test_verify_helpers_accept_separate_tron_payout_worker_deployment(self):
+        module = load_script_module("verify-tron-usdt-payout-worker.py")
+        api_deployment = {
+            "spec": {
+                "template": {
+                    "spec": {
+                        "containers": [
+                            {"name": "app", "env": []},
+                            {
+                                "name": "tasks",
+                                "command": [
+                                    "celery",
+                                    "-A",
+                                    "celery_worker.celery",
+                                    "worker",
+                                    "-Q",
+                                    "celery",
+                                ],
+                                "env": [
+                                    {
+                                        "name": "TRON_USDT_PAYOUT_RESOURCE_PROVISIONING_ENABLED",
+                                        "value": "true",
+                                    },
+                                    {
+                                        "name": "TRON_USDT_PAYOUT_QUEUE",
+                                        "value": "tron_usdt_fee_payouts",
+                                    },
+                                ],
+                            },
+                            {"name": "redis", "env": []},
+                        ]
+                    }
+                }
+            }
+        }
+        worker_deployment = {
+            "spec": {
+                "template": {
+                    "spec": {
+                        "containers": [
+                            {
+                                "name": "tron-usdt-payouts",
+                                "command": [
+                                    "celery",
+                                    "-A",
+                                    "celery_worker.celery",
+                                    "worker",
+                                    "-Q",
+                                    "tron_usdt_fee_payouts",
+                                    "--concurrency=1",
+                                    "--prefetch-multiplier=1",
+                                ],
+                                "env": [
+                                    {
+                                        "name": "REDIS_HOST",
+                                        "value": "tron-shkeeper:6379",
+                                    },
+                                    {
+                                        "name": "TRON_USDT_PAYOUT_QUEUE",
+                                        "value": "tron_usdt_fee_payouts",
+                                    },
+                                ],
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+
+        api_containers, queue, feature_enabled = module.verify_api_deployment(
+            api_deployment
+        )
+        worker_containers = module.verify_worker_deployment(worker_deployment, queue)
+
+        self.assertTrue(feature_enabled)
+        self.assertEqual(queue, "tron_usdt_fee_payouts")
+        self.assertEqual(set(api_containers), {"app", "tasks", "redis"})
+        self.assertEqual(set(worker_containers), {"tron-usdt-payouts"})
 
 
 if __name__ == "__main__":

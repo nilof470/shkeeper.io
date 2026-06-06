@@ -9,7 +9,7 @@ The chart fork is published as a versioned OCI chart:
 
 ```text
 oci://ghcr.io/nilof470/helm-charts/shkeeper
-version: 1.7.28-nilof470.1
+version: 1.7.28-nilof470.8
 ```
 
 For a private GHCR package, log Helm in once on the VPS:
@@ -19,13 +19,18 @@ echo "GITHUB_TOKEN_WITH_READ_PACKAGES" | helm registry login ghcr.io -u nilof470
 ```
 
 The upstream `vsys-host/helm-charts` chart renders the TRON sidecar with three
-containers: `app`, `tasks`, and `redis`. Our chart fork renders one additional
-worker in the same pod when TRON USDT payout resource provisioning is enabled:
-`tron-usdt-payouts`.
+containers: `app`, `tasks`, and `redis`. Our chart fork keeps that API pod shape
+and, when TRON USDT payout execution is active, renders a separate sequential
+`tron-usdt-payouts` Deployment.
 
-The worker must be in the same pod because the TRON sidecar Redis broker is
-pod-local. Running it as a separate Deployment is unsafe unless `REDIS_HOST` is
-moved to a shared Redis service.
+The worker reaches the TRON sidecar Redis broker through the `tron-shkeeper`
+Service on port `6379`. Keep `payouts.networkPolicies.enabled=true` so that
+Redis port is internal to the payout topology.
+
+The current production scope intentionally uses `payouts.storage.mode:
+singleNodeSqlitePvc`. This is accepted for the Grither Pay gateway deployment
+because it is a single-node, controlled-throughput installation. Do not scale
+SHKeeper writers horizontally without replacing this storage mode.
 
 The wrapper applies the published chart fork directly. There is no local chart
 clone, post-renderer, or Python YAML dependency in the deploy path.
@@ -52,8 +57,8 @@ The wrapper:
 - runs `helm upgrade --install` against the chart fork without Helm wait mode;
 - waits for `shkeeper-deployment`;
 - waits for `tron-shkeeper` when TRON is enabled;
-- verifies `tron-usdt-payouts` when
-  `TRON_USDT_PAYOUT_RESOURCE_PROVISIONING_ENABLED=true`.
+- waits for `tron-usdt-payouts` when that worker Deployment is rendered;
+- verifies the TRON API pod and the sequential payout worker topology.
 
 The chart is not upgraded with `--atomic` or `--wait`: the upstream chart can
 render unused PVCs that stay in `WaitForFirstConsumer`, which makes Helm wait
@@ -64,11 +69,12 @@ The equivalent direct Helm command is:
 ```bash
 helm upgrade --install -n default -f /root/shkeeper-values.yaml \
   shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
-  --version 1.7.28-nilof470.1 --timeout 300s
+  --version 1.7.28-nilof470.8 --timeout 300s
 
 /opt/shkeeper.io/deploy/shkeeper/verify-tron-usdt-payout-worker.py \
   --namespace shkeeper \
-  --deployment tron-shkeeper
+  --deployment tron-shkeeper \
+  --worker-deployment tron-usdt-payouts
 ```
 
 Use the wrapper in production so the Helm command and verification do not drift.
@@ -76,10 +82,11 @@ Use the wrapper in production so the Helm command and verification do not drift.
 Expected TRON pod shape after deploy:
 
 ```text
-tron-shkeeper ... 4/4 Running
+tron-shkeeper ... 3/3 Running
+tron-usdt-payouts ... 1/1 Running
 ```
 
 Do not leave `TRON_USDT_PAYOUT_RESOURCE_PROVISIONING_ENABLED=true` in production
-without this worker invariant. The TRON sidecar also fails closed when the queue
-has no consumer, but the deploy wrapper prevents that state during normal
-operations.
+without the worker invariant once the rail is active. A staged rail with
+`paused=true` or `killSwitch=true` may not render the worker yet; after enabling
+execution, run the verifier with `--required` if you need a hard worker gate.

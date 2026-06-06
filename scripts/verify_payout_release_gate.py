@@ -86,6 +86,12 @@ PRODUCTION_OVERLAY_IMAGE_FIELDS = {
     "ton": ("ton_shkeeper",),
     "ethereum": ("ethereum_shkeeper",),
 }
+ACTIVE_DEPLOY_CHART_VERSION_PATHS = [
+    ROOT / "deploy" / "shkeeper" / "upgrade.sh",
+    ROOT / "deploy" / "shkeeper" / "README.md",
+    ROOT / "docs" / "DEPLOYMENT.md",
+]
+STALE_FORK_CHART_VERSION_PATTERN = r"1\.7\.28-nilof470\.(?:1|2)\b"
 
 
 class GateFailure(RuntimeError):
@@ -236,6 +242,36 @@ def validate_openapi_json():
     print("docs/openapi-3.json OK")
 
 
+def helm_chart_version():
+    chart_path = REPOS["helm"] / "charts" / "shkeeper" / "Chart.yaml"
+    text = chart_path.read_text(encoding="utf-8")
+    match = re.search(r"(?m)^version:\s*([^\s#]+)", text)
+    if not match:
+        raise GateFailure(f"{chart_path} has no chart version")
+    return match.group(1).strip("'\"")
+
+
+def validate_chart_version_alignment():
+    version = helm_chart_version()
+    missing = []
+    for path in ACTIVE_DEPLOY_CHART_VERSION_PATHS:
+        text = path.read_text(encoding="utf-8")
+        stale_matches = sorted(set(re.findall(STALE_FORK_CHART_VERSION_PATTERN, text)))
+        if stale_matches:
+            missing.append(
+                f"{path.relative_to(ROOT)}: stale chart version(s): {', '.join(stale_matches)}"
+            )
+        if version not in text:
+            missing.append(f"{path.relative_to(ROOT)}: missing chart version {version}")
+
+    if missing:
+        raise GateFailure(
+            "Deploy chart version references are not aligned with Helm Chart.yaml:\n"
+            + "\n".join(missing)
+        )
+    print(f"\n==> Deploy chart version alignment\nChart version {version} OK")
+
+
 def test_commands():
     tron_python = Path("/tmp/tron-shkeeper-py312-venv/bin/python")
     if not tron_python.exists():
@@ -341,6 +377,7 @@ def run_release_gate(args):
             + [("Helm lint", ["helm", "lint", "charts/shkeeper"], REPOS["helm"], None)]
         ):
             print(f"{label}: ({cwd}) {' '.join(command)}")
+        print("Chart version alignment: Helm Chart.yaml matches deploy wrapper and active deploy docs")
         print("Boundary checks: payout execution/routing allowlist tests, business-policy term scans, and product-specific runtime name scans")
         print(
             "Clean release scans: production payout overlay image fields match current git commits"
@@ -351,6 +388,7 @@ def run_release_gate(args):
         require_clean_worktrees()
         validate_production_overlay_image_tags()
 
+    validate_chart_version_alignment()
     validate_openapi_json()
 
     for label, command, cwd, env in test_commands():
