@@ -422,18 +422,22 @@ class ShkeeperDeployScriptsTestCase(unittest.TestCase):
         module = load_script_module("payout-secret-guard.py")
         signing_keys = {
             "grither-pay": {
-                "shkeeper-to-sidecars-v1": {
+                "shkeeper-to-eth-v1": {
                     "secret": "sidecar-secret",
                     "rails": ["ETH-USDT"],
-                }
+                },
+                "shkeeper-to-ton-v1": {
+                    "secret": "ton-secret",
+                    "rails": ["TON-USDT"],
+                },
             }
         }
         consumer_keys = {
             "grither-pay": {
                 "rails": ["ETH-USDT"],
                 "keys": {
-                    "shkeeper-to-sidecars-v1": "sidecar-secret",
-                    "stale-key": "old-secret",
+                    "shkeeper-to-eth-v1": "sidecar-secret",
+                    "shkeeper-to-ton-v1": "ton-secret",
                 },
             }
         }
@@ -451,7 +455,7 @@ class ShkeeperDeployScriptsTestCase(unittest.TestCase):
             "grither-pay": {
                 "shkeeper-to-sidecars-v1": {
                     "secret": "sidecar-secret",
-                    "rails": ["ETH-USDT"],
+                    "rails": ["ETH-USDT", "TON-USDT"],
                 }
             }
         }

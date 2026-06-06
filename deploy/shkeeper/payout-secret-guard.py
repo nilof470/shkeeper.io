@@ -177,27 +177,24 @@ def validate_sidecar_secret_contract(
                 "top-level rails"
             )
         allowed_consumer_rails = {normalize_rail(rail) for rail in consumer_rails}
-        configured_signing_rails = set(signing_rails(entries))
-        extra_consumer_rails = allowed_consumer_rails - configured_signing_rails
-        if extra_consumer_rails:
+        expected_consumer_rails = set(rails_to_check)
+        if allowed_consumer_rails != expected_consumer_rails:
             raise SecretContractError(
-                f"{consumer}: sidecar consumer rails include rails with no SHKeeper "
-                f"signing key: {sorted(extra_consumer_rails)}"
-            )
-        missing_consumer_rails = set(rails_requiring_top_level_auth) - allowed_consumer_rails
-        if missing_consumer_rails:
-            raise SecretContractError(
-                f"{consumer}: sidecar consumer secret does not allow selected "
-                f"ETH/TON rails {sorted(missing_consumer_rails)}"
+                f"{consumer}: sidecar consumer rails must exactly match selected "
+                f"rails {sorted(expected_consumer_rails)}; got "
+                f"{sorted(allowed_consumer_rails)}"
             )
 
-        configured_signing_key_ids = {entry["key_id"] for entry in entries}
-        unknown_key_ids = set(keys_map) - configured_signing_key_ids
-        if unknown_key_ids:
+        expected_key_ids = {
+            entry["key_id"] for entry in top_level_key_entries(entries, rails_to_check)
+        }
+        actual_key_ids = set(keys_map)
+        if actual_key_ids != expected_key_ids:
             raise SecretContractError(
                 "PAYOUT_AUTH_UNKNOWN_KEY: "
-                f"{consumer}: sidecar consumer key ids are not configured as "
-                f"SHKeeper signing keys: {sorted(unknown_key_ids)}"
+                f"{consumer}: sidecar consumer key ids must exactly match selected "
+                f"SHKeeper signing key ids {sorted(expected_key_ids)}; got "
+                f"{sorted(actual_key_ids)}"
             )
 
         for rail in rails_requiring_top_level_auth:
