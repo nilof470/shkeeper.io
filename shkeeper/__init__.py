@@ -3,6 +3,7 @@ import os
 import logging
 import secrets
 import shutil
+import sys
 
 from flask import logging as flog, render_template, request
 
@@ -52,6 +53,15 @@ def _env_bool(name, default=False):
     return value.lower() in ("1", "true", "yes", "on")
 
 
+def _payout_cli_disables_scheduler():
+    payout_cli_commands = {
+        "payout-callback-dispatcher",
+        "payout-execution-reconciler",
+        "payout-rail-sync",
+    }
+    return any(arg in payout_cli_commands for arg in sys.argv[1:])
+
+
 def internal_server_error(e):
     return render_template("500.j2", theme=request.cookies.get("theme", "light")), 500
 
@@ -83,6 +93,10 @@ def create_app(test_config=None):
         ),
         DEV_MODE=bool(os.environ.get("DEV_MODE", False)),
         DEV_MODE_ENC_PW=os.environ.get("DEV_MODE_ENC_PW"),
+        DISABLE_SCHEDULER=(
+            _payout_cli_disables_scheduler()
+            or _env_bool("DISABLE_SCHEDULER", False)
+        ),
         ENABLE_PAYOUT_CALLBACK=bool(os.environ.get("ENABLE_PAYOUT_CALLBACK")),
         MIN_CONFIRMATION_BLOCK_FOR_PAYOUT=os.environ.get(
             "MIN_CONFIRMATION_BLOCK_FOR_PAYOUT", 1

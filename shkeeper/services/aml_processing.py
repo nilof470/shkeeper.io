@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import json
 
 from flask import current_app
 
@@ -116,6 +117,36 @@ def _resolve_from_result(check, result):
     return check
 
 
+def _is_retryable_sidecar_error(result):
+    return (
+        result.get("error_source") == "aml-shkeeper"
+        and result.get("provider_status") == "error"
+    )
+
+
+def _resolve_retryable_sidecar_error(check, result):
+    check.status = AmlStatus.CHECKING
+    check.provider_status = "checking"
+    check.deposit_decision = None
+    check.decision_reason = None
+    check.error_code = result.get("error_code") or "aml_shkeeper_error"
+    check.error_message = result.get("error_message")
+    check.raw_response_json = json.dumps(result, sort_keys=True, default=str)
+    check.attempts = (check.attempts or 0) + 1
+    check.next_retry_at = _now() + _retry_delay()
+    if check.timeout_at is None:
+        check.timeout_at = _timeout_at()
+    db.session.add(check)
+    db.session.commit()
+    return check
+
+
+def _resolve_client_result(check, result):
+    if _is_retryable_sidecar_error(result):
+        return _resolve_retryable_sidecar_error(check, result)
+    return _resolve_from_result(check, result)
+
+
 def _resolve_timeout(check):
     check.status = AmlStatus.MANUAL_REVIEW
     check.deposit_decision = DepositDecision.MANUAL_REVIEW
@@ -149,7 +180,7 @@ def ensure_aml_for_transaction(tx):
 
     check = _persist_new_check(_pending_check(tx, coverage))
     result = AmlShkeeperClient().create_check(_payload_for_sidecar(tx, check))
-    return _resolve_from_result(check, result)
+    return _resolve_client_result(check, result)
 
 
 def refresh_aml_check(aml_check):
@@ -157,7 +188,7 @@ def refresh_aml_check(aml_check):
     if aml_check.timeout_at and aml_check.timeout_at <= now:
         return _resolve_timeout(aml_check)
     result = AmlShkeeperClient().get_check(aml_check.deposit_id)
-    return _resolve_from_result(aml_check, result)
+    return _resolve_client_result(aml_check, result)
 
 
 def process_pending_aml_checks(now=None):

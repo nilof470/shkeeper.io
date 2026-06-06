@@ -132,6 +132,45 @@ class AmlProcessingTestCase(unittest.TestCase):
         self.assertEqual(calls[0]["deposit_id"], f"shkeeper-tx-{tx.id}")
         self.assertEqual(check.status, AmlStatus.CHECKING)
 
+    def test_sidecar_auth_error_remains_retryable_until_timeout(self):
+        def create_check(client, payload):
+            return {
+                "provider_status": "error",
+                "error_source": "aml-shkeeper",
+                "error_code": "http_401",
+                "error_message": '{"msg":"authorization requred","status":"error"}',
+            }
+
+        aml_processing.AmlShkeeperClient.create_check = create_check
+        tx = self.make_tx("150")
+
+        check = aml_processing.ensure_aml_for_transaction(tx)
+
+        self.assertEqual(check.status, AmlStatus.CHECKING)
+        self.assertEqual(check.provider_status, "checking")
+        self.assertIsNone(check.deposit_decision)
+        self.assertIsNone(check.decision_reason)
+        self.assertEqual(check.error_code, "http_401")
+        self.assertIsNotNone(check.next_retry_at)
+        self.assertFalse(aml_processing.is_callback_allowed(tx))
+
+    def test_provider_error_still_goes_to_manual_review(self):
+        def create_check(client, payload):
+            return {
+                "provider_status": "error",
+                "error_code": "aml_provider_error",
+                "error_message": "provider rejected request",
+            }
+
+        aml_processing.AmlShkeeperClient.create_check = create_check
+        tx = self.make_tx("150")
+
+        check = aml_processing.ensure_aml_for_transaction(tx)
+
+        self.assertEqual(check.status, AmlStatus.MANUAL_REVIEW)
+        self.assertEqual(check.deposit_decision, DepositDecision.MANUAL_REVIEW)
+        self.assertEqual(check.decision_reason, "aml_provider_error")
+
     def test_pending_check_blocks_callback(self):
         tx = self.make_tx("150")
         check = AmlCheck(
