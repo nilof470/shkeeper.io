@@ -154,6 +154,10 @@ class PayoutExecutionApiTestCase(unittest.TestCase):
         token = base64.b64encode(b"admin:secret").decode("ascii")
         return {"Authorization": f"Basic {token}"}
 
+    def bad_admin_basic_auth_headers(self):
+        token = base64.b64encode(b"admin:wrong").decode("ascii")
+        return {"Authorization": f"Basic {token}"}
+
     def add_tron_rail(self, **overrides):
         values = {
             "consumer": "grither-pay",
@@ -1114,6 +1118,55 @@ class PayoutExecutionApiTestCase(unittest.TestCase):
 
         self.assertEqual(cm.exception.code, "AUTOMATIC_LEGACY_PAYOUT_BLOCKED")
         self.assertEqual(crypto.calls, [])
+
+    def test_manual_resolution_requires_operator_auth_without_redirect(self):
+        response = self.client.post(
+            "/api/v1/payout-executions/1/manual-resolution",
+            json={"resolution_status": "SAFE_FOR_MANUAL_PAYOUT"},
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()["status"], "error")
+        self.assertEqual(
+            response.get_json()["message"],
+            "Authenticated operator is required",
+        )
+        self.assertNotIn("Location", response.headers)
+        self.assertEqual(PayoutExecutionResolutionAudit.query.count(), 0)
+
+    def test_manual_resolution_rejects_bad_basic_auth_as_json_403(self):
+        self.add_admin_user()
+
+        response = self.client.post(
+            "/api/v1/payout-executions/1/manual-resolution",
+            json={"resolution_status": "SAFE_FOR_MANUAL_PAYOUT"},
+            headers=self.bad_admin_basic_auth_headers(),
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()["status"], "error")
+        self.assertEqual(
+            response.get_json()["message"],
+            "Bad HTTP Basic Auth credentials",
+        )
+        self.assertNotIn("Location", response.headers)
+        self.assertEqual(PayoutExecutionResolutionAudit.query.count(), 0)
+
+    def test_manual_resolution_rejects_api_key_auth_as_json_403(self):
+        response = self.client.post(
+            "/api/v1/payout-executions/1/manual-resolution",
+            json={"resolution_status": "SAFE_FOR_MANUAL_PAYOUT"},
+            headers={"X-Shkeeper-Api-Key": "wallet-api-key"},
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()["status"], "error")
+        self.assertEqual(
+            response.get_json()["message"],
+            "This endpoint doesn't accept X-Shkeeper-Api-Key auth",
+        )
+        self.assertNotIn("Location", response.headers)
+        self.assertEqual(PayoutExecutionResolutionAudit.query.count(), 0)
 
     def test_manual_resolution_requires_structured_evidence(self):
         self.add_admin_user()

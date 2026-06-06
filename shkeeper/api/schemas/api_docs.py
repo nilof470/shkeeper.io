@@ -825,7 +825,7 @@ payout_execution_manual_resolution_doc = {
         "a constrained resolution state."
     ),
     "tags": ["Payouts"],
-    "security": [{"Basic_Optional": []}, {"Basic": []}],
+    "security": [{"Basic": []}],
     "parameters": [
         {
             "name": "execution_id",

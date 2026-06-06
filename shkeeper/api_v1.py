@@ -26,7 +26,12 @@ from shkeeper.services.payout_execution_service import PayoutExecutionService
 from flask_smorest import Blueprint as SmorestBlueprint
 
 from shkeeper import db
-from shkeeper.auth import basic_auth_optional, login_required, api_key_required
+from shkeeper.auth import (
+    api_key_required,
+    api_operator_required,
+    basic_auth_optional,
+    login_required,
+)
 from shkeeper.modules.classes.crypto import Crypto
 from shkeeper.modules.classes.tron_token import TronToken
 from shkeeper.modules.classes.ethereum import Ethereum
@@ -142,8 +147,7 @@ def get_payout_execution(external_id):
 
 @blp_v1.post("/payout-executions/<int:execution_id>/manual-resolution")
 @blp_v1.doc(**payout_execution_manual_resolution_doc)
-@basic_auth_optional
-@login_required
+@api_operator_required
 @handle_request_error
 def record_payout_execution_manual_resolution(execution_id):
     """Record operator manual-resolution evidence for a payout execution."""

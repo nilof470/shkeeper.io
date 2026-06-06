@@ -408,6 +408,39 @@ class PayoutCallbackOutboxTestCase(unittest.TestCase):
         self.assertEqual(delivered, [])
         self.assertEqual(second.dispatch_status, "PENDING")
 
+    def test_later_event_can_dispatch_after_earlier_event_failed_permanently(self):
+        from shkeeper.services.payout_callback_outbox import PayoutCallbackOutbox
+
+        class Response:
+            status_code = 204
+
+        execution = self.create_execution()
+        PayoutExecutionService.transition(
+            execution,
+            PayoutExecutionState.PREFLIGHTED,
+        )
+        first, second = PayoutCallbackEvent.query.order_by(
+            PayoutCallbackEvent.event_version
+        ).all()
+        first.dispatch_status = "FAILED"
+        first.apply_result = "FAILED"
+        first.last_error = "callback endpoint was unavailable"
+        first.next_attempt_at = None
+        db.session.commit()
+        delivered = []
+
+        processed = PayoutCallbackOutbox.dispatch_due_events(
+            batch_size=10,
+            deliverer=lambda event: delivered.append(event.event_version)
+            or Response(),
+            now=datetime(2026, 6, 3, 12, 0, 0),
+        )
+
+        db.session.refresh(second)
+        self.assertEqual(processed, 1)
+        self.assertEqual(delivered, [2])
+        self.assertEqual(second.dispatch_status, "DELIVERED")
+
 
 if __name__ == "__main__":
     unittest.main()

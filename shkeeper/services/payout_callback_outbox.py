@@ -30,6 +30,7 @@ class PayoutCallbackOutbox:
     DISPATCHING = "DISPATCHING"
     DELIVERED = "DELIVERED"
     FAILED = "FAILED"
+    ACTIVE_UNDELIVERED = (PENDING, RETRY, DISPATCHING)
 
     @staticmethod
     def _utcnow():
@@ -387,7 +388,7 @@ class PayoutCallbackOutbox:
             PayoutCallbackEvent.query.filter(
                 PayoutCallbackEvent.execution_id == event.execution_id,
                 PayoutCallbackEvent.event_version < event.event_version,
-                PayoutCallbackEvent.dispatch_status != cls.DELIVERED,
+                PayoutCallbackEvent.dispatch_status.in_(cls.ACTIVE_UNDELIVERED),
             )
             .with_entities(PayoutCallbackEvent.id)
             .first()

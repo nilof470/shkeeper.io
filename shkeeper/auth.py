@@ -69,6 +69,40 @@ def basic_auth_optional(view):
     return wrapped_view
 
 
+def api_operator_required(view):
+    """Require an authenticated operator for JSON API endpoints."""
+
+    @functools.wraps(view)
+    def wrapped_view(**kwargs):
+        if g.user is not None:
+            return view(**kwargs)
+
+        if "X-Shkeeper-Api-Key" in request.headers:
+            return {
+                "status": "error",
+                "message": "This endpoint doesn't accept X-Shkeeper-Api-Key auth",
+            }, 403
+
+        auth = request.authorization
+        if not auth:
+            return {
+                "status": "error",
+                "message": "Authenticated operator is required",
+            }, 403
+
+        user = User.query.filter_by(username=auth.username).first()
+        if user and user.verify_password(auth.password):
+            g.user = user
+            return view(**kwargs)
+
+        return {
+            "status": "error",
+            "message": "Bad HTTP Basic Auth credentials",
+        }, 403
+
+    return wrapped_view
+
+
 def login_required(view):
     """View decorator that redirects anonymous users to the login page."""
 
