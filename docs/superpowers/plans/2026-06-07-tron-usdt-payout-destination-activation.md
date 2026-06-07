@@ -1030,7 +1030,7 @@ def test_execution_preflight_allows_unactivated_destination_when_auto_activation
     original_flag = self.store_module.config.TRON_USDT_PAYOUT_AUTO_ACTIVATE_DESTINATION
     self.store_module.config.TRON_USDT_PAYOUT_AUTO_ACTIVATE_DESTINATION = True
     try:
-        quote = Quote(
+        quote = FakeQuote(
             submit_ready=False,
             code="DESTINATION_NOT_ACTIVATED",
             reason="TRON payout destination is not activated",
@@ -1047,7 +1047,7 @@ def test_legacy_preflight_still_rejects_unactivated_destination(self):
     original_flag = self.store_module.config.TRON_USDT_PAYOUT_AUTO_ACTIVATE_DESTINATION
     self.store_module.config.TRON_USDT_PAYOUT_AUTO_ACTIVATE_DESTINATION = True
     try:
-        quote = Quote(
+        quote = FakeQuote(
             submit_ready=False,
             code="DESTINATION_NOT_ACTIVATED",
             reason="TRON payout destination is not activated",
@@ -1060,16 +1060,29 @@ def test_legacy_preflight_still_rejects_unactivated_destination(self):
     self.assertEqual(ctx.exception.code, "DESTINATION_NOT_ACTIVATED")
 ```
 
-If the existing helper `preflight_with_runtime()` does not accept `execution_id`, update only the helper in this test class:
+Update the existing `preflight_with_runtime()` helper in this test class:
 
 ```python
     def preflight_with_runtime(self, *, wallet_balance=Decimal("100"), quote=None, worker_ready=True, execution_id="1"):
-        ...
-        return self.store_module.PayoutExecutionStore.preflight(
-            self.payload(execution_id=execution_id),
-            authenticated_consumer="grither-pay",
-            execution_id=execution_id,
-        )
+        payout_status = importlib.import_module("app.payout_status")
+        quote = quote or FakeQuote()
+        with patch.object(payout_status, "Wallet", lambda symbol: FakeWallet(symbol, wallet_balance)):
+            with patch.object(
+                payout_status,
+                "estimate_fee_deposit_resources_for_usdt_payout",
+                lambda destination, amount: quote,
+            ):
+                with patch.object(
+                    payout_status,
+                    "usdt_payout_worker_ready",
+                    lambda: worker_ready,
+                ):
+                    payload = self.body(**({"execution_id": execution_id} if execution_id is not None else {}))
+                    return self.store_module.PayoutExecutionStore.preflight(
+                        payload,
+                        authenticated_consumer="grither-pay",
+                        execution_id=execution_id,
+                    )
 ```
 
 - [ ] **Step 2: Run preflight tests and verify they fail**
@@ -1661,24 +1674,69 @@ git commit -m "fix: keep sidecar preflight diagnostics retryable"
 
 - [ ] **Step 1: Write Grither transient diagnostic test**
 
-In `ShKeeperPayoutWebhookControllerTest.java`, add:
+In `ShKeeperPayoutWebhookControllerTest.java`, add helper methods near the existing `callback()` helper:
+
+```java
+    private static ShKeeperPayoutCallbackPayload createdCallback(
+            String eventId,
+            String externalId,
+            String transitionId
+    ) {
+        return createdCallback(eventId, externalId, transitionId, null, null);
+    }
+
+    private static ShKeeperPayoutCallbackPayload createdCallback(
+            String eventId,
+            String externalId,
+            String transitionId,
+            String errorCode,
+            String errorMessage
+    ) {
+        return new ShKeeperPayoutCallbackPayload(
+                eventId,
+                "grither-pay",
+                9701L,
+                null,
+                externalId,
+                "usdt-payout-execution-v1",
+                "TRON",
+                "USDT",
+                ShKeeperPayoutState.CREATED,
+                1,
+                transitionId,
+                Instant.parse("2026-06-03T10:15:00Z"),
+                Instant.parse("2026-06-03T10:15:01Z"),
+                REQUEST_HASH,
+                SIDECAR_HASH,
+                null,
+                List.of(),
+                List.of(),
+                errorCode,
+                errorMessage,
+                false,
+                null);
+    }
+```
+
+Add the transient diagnostic test:
 
 ```java
 @Test
 void sameVersionCreatedTransientDiagnosticDoesNotRequireReconciliation() throws Exception {
     seedExecution("PWEB-DIAG");
-    ShKeeperPayoutCallbackPayload first = callback("evt-diag-1", "PWEB-DIAG", "transition-diag");
+    ShKeeperPayoutCallbackPayload first = createdCallback("evt-diag-1", "PWEB-DIAG", "transition-diag");
     byte[] firstBody = objectMapper.writeValueAsBytes(first);
     restTemplate.postForEntity(
             ShKeeperPayoutWebhookController.PATH,
             new HttpEntity<>(firstBody, signedHeaders(firstBody, "evt-diag-1")),
             Map.class);
 
-    ShKeeperPayoutCallbackPayload diagnostic = callback("evt-diag-2", "PWEB-DIAG", "transition-diag")
-            .toBuilder()
-            .errorCode("SIDECAR_PREFLIGHT_UNAVAILABLE")
-            .errorMessage("Sidecar preflight endpoint returned HTTP 503")
-            .build();
+    ShKeeperPayoutCallbackPayload diagnostic = createdCallback(
+            "evt-diag-2",
+            "PWEB-DIAG",
+            "transition-diag",
+            "SIDECAR_PREFLIGHT_UNAVAILABLE",
+            "Sidecar preflight endpoint returned HTTP 503");
     byte[] body = objectMapper.writeValueAsBytes(diagnostic);
 
     ResponseEntity<Map> response = restTemplate.postForEntity(
@@ -1694,8 +1752,6 @@ void sameVersionCreatedTransientDiagnosticDoesNotRequireReconciliation() throws 
 }
 ```
 
-If `ShKeeperPayoutCallbackPayload` does not have `toBuilder()`, create the diagnostic payload with the existing helper and then set the relevant fields through the constructor/helper pattern already used in the test class.
-
 - [ ] **Step 2: Write same-version real-conflict regression test**
 
 Add:
@@ -1704,14 +1760,14 @@ Add:
 @Test
 void sameVersionCreatedChangedTransitionStillRequiresReconciliation() throws Exception {
     seedExecution("PWEB-CONFLICT");
-    ShKeeperPayoutCallbackPayload first = callback("evt-conflict-1", "PWEB-CONFLICT", "transition-a");
+    ShKeeperPayoutCallbackPayload first = createdCallback("evt-conflict-1", "PWEB-CONFLICT", "transition-a");
     byte[] firstBody = objectMapper.writeValueAsBytes(first);
     restTemplate.postForEntity(
             ShKeeperPayoutWebhookController.PATH,
             new HttpEntity<>(firstBody, signedHeaders(firstBody, "evt-conflict-1")),
             Map.class);
 
-    ShKeeperPayoutCallbackPayload conflicting = callback("evt-conflict-2", "PWEB-CONFLICT", "transition-b");
+    ShKeeperPayoutCallbackPayload conflicting = createdCallback("evt-conflict-2", "PWEB-CONFLICT", "transition-b");
     byte[] body = objectMapper.writeValueAsBytes(conflicting);
 
     ResponseEntity<Map> response = restTemplate.postForEntity(
