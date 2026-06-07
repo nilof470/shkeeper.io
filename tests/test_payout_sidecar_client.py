@@ -119,6 +119,22 @@ class PayoutSidecarClientTestCase(unittest.TestCase):
         with self.assertRaises(SidecarStatusUnavailable):
             HttpPayoutSidecarClient().preflight(self.execution)
 
+    def test_preflight_http_503_carries_structured_payload(self):
+        payout_sidecar_client.requests.post = lambda *args, **kwargs: FakeResponse(
+            503,
+            {
+                "status": "error",
+                "code": "PROFEEX_ESTIMATE_UNAVAILABLE",
+                "message": "Unable to estimate resources",
+            },
+        )
+
+        with self.assertRaises(SidecarStatusUnavailable) as ctx:
+            HttpPayoutSidecarClient().preflight(self.execution)
+
+        self.assertEqual(ctx.exception.status_code, 503)
+        self.assertEqual(ctx.exception.payload["code"], "PROFEEX_ESTIMATE_UNAVAILABLE")
+
     def test_preflight_payload_uses_canonical_six_decimal_amount(self):
         captured = {}
         self.execution.amount = Decimal("25")

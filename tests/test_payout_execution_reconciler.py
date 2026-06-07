@@ -49,10 +49,13 @@ class FakeSidecarClient:
         }
         self.raise_on_submit = None
         self.raise_on_status = None
+        self.raise_on_preflight = None
 
     def preflight(self, execution):
         self.calls.append(("preflight", execution.id, execution.state.name))
         self.assert_execution_committed(execution.id)
+        if self.raise_on_preflight:
+            raise self.raise_on_preflight
         return dict(self.preflight_response)
 
     def submit(self, execution):
@@ -194,6 +197,28 @@ class PayoutExecutionReconcilerTestCase(unittest.TestCase):
         )
         self.assertIsNone(execution.lease_owner)
         self.assertIsNone(execution.lease_expires_at)
+
+    def test_created_preflight_structured_503_records_retryable_diagnostic_without_transition(self):
+        execution = self.create_execution()
+        client = FakeSidecarClient()
+        client.raise_on_preflight = SidecarStatusUnavailable(
+            "Sidecar preflight endpoint returned HTTP 503",
+            status_code=503,
+            payload={
+                "code": "PROFEEX_ESTIMATE_UNAVAILABLE",
+                "message": "Unable to estimate resources",
+            },
+        )
+
+        PayoutExecutionReconciler.dispatch_ready(client=client)
+
+        db.session.refresh(execution)
+        self.assertEqual(execution.state, PayoutExecutionState.CREATED)
+        self.assertEqual(execution.event_version, 1)
+        self.assertFalse(execution.reconciliation_required)
+        self.assertEqual(execution.error_code, "PROFEEX_ESTIMATE_UNAVAILABLE")
+        self.assertEqual(execution.error_message, "Unable to estimate resources")
+        self.assertIsNotNone(execution.next_dispatch_at)
 
     def test_reconciler_polls_enqueued_and_broadcast_execution_until_terminal(self):
         execution = self.create_execution()

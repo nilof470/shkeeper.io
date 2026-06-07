@@ -37,6 +37,11 @@ class PayoutExecutionReconciler:
         return datetime.now(timezone.utc).replace(tzinfo=None)
 
     @classmethod
+    def _preflight_retry_delay(cls, execution):
+        attempts = execution.dispatch_attempts or 1
+        return min(60 * (2 ** max(attempts - 1, 0)), 3600)
+
+    @classmethod
     def dispatch_ready(cls, *, client=None, batch_size=50, lease_owner=None):
         client = client or HttpPayoutSidecarClient()
         lease_owner = lease_owner or f"payout-reconciler:{uuid.uuid4()}"
@@ -210,8 +215,14 @@ class PayoutExecutionReconciler:
         try:
             response = client.preflight(execution)
         except SidecarStatusUnavailable as exc:
-            execution.error_code = "SIDECAR_PREFLIGHT_UNAVAILABLE"
-            execution.error_message = str(exc)
+            payload = getattr(exc, "payload", None) or {}
+            execution.error_code = (
+                payload.get("code") or "SIDECAR_PREFLIGHT_UNAVAILABLE"
+            )
+            execution.error_message = payload.get("message") or str(exc)
+            execution.next_dispatch_at = cls._utcnow() + timedelta(
+                seconds=cls._preflight_retry_delay(execution)
+            )
             db.session.add(execution)
             db.session.commit()
             return execution

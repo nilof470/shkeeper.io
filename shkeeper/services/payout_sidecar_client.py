@@ -30,7 +30,10 @@ class SidecarSubmitTimeout(SidecarClientError):
 
 
 class SidecarStatusUnavailable(SidecarClientError):
-    pass
+    def __init__(self, message, *, status_code=None, payload=None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.payload = payload if isinstance(payload, dict) else None
 
 
 class SidecarExecutionNotFound(SidecarClientError):
@@ -201,11 +204,15 @@ class HttpPayoutSidecarClient:
         payload = self._json(response, "preflight")
         if response.status_code >= 500:
             raise SidecarStatusUnavailable(
-                f"Sidecar preflight endpoint returned HTTP {response.status_code}"
+                f"Sidecar preflight endpoint returned HTTP {response.status_code}",
+                status_code=response.status_code,
+                payload=payload,
             )
         if response.status_code >= 400 and not self._is_error_payload(payload):
             raise SidecarStatusUnavailable(
-                f"Sidecar preflight endpoint returned HTTP {response.status_code}"
+                f"Sidecar preflight endpoint returned HTTP {response.status_code}",
+                status_code=response.status_code,
+                payload=payload,
             )
         return payload
 
