@@ -257,6 +257,36 @@ class ProfeeXActivationProviderTests(unittest.TestCase):
         self.assertEqual(ctx.exception.error_code, "DUPLICATE_REQUEST")
         self.assertTrue(ctx.exception.temporary)
 
+    def test_activation_503_is_retryable_unavailable(self):
+        profeex.requests.post = lambda *args, **kwargs: FakeResponse(
+            503,
+            {"message": "service unavailable"},
+        )
+
+        with self.assertRaises(profeex.ProfeeXOrderError) as ctx:
+            profeex.ProfeeXProvider().activate_address(
+                "TTMqzSAwwcM1UqMy7Up2eQuNXZ6uUZ9AN5"
+            )
+
+        self.assertEqual(ctx.exception.resource_name, "activation")
+        self.assertEqual(ctx.exception.error_code, "SERVICE_UNAVAILABLE")
+        self.assertTrue(ctx.exception.temporary)
+
+    def test_activation_request_exception_is_retryable_unavailable(self):
+        def post(*args, **kwargs):
+            raise profeex.requests.RequestException("timeout")
+
+        profeex.requests.post = post
+
+        with self.assertRaises(profeex.ProfeeXOrderError) as ctx:
+            profeex.ProfeeXProvider().activate_address(
+                "TTMqzSAwwcM1UqMy7Up2eQuNXZ6uUZ9AN5"
+            )
+
+        self.assertEqual(ctx.exception.resource_name, "activation")
+        self.assertEqual(ctx.exception.error_code, "SERVICE_UNAVAILABLE")
+        self.assertTrue(ctx.exception.temporary)
+
     def test_activation_422_invalid_address_is_terminal(self):
         profeex.requests.post = lambda *args, **kwargs: FakeResponse(
             422,
@@ -621,6 +651,17 @@ class FailingProvider(FakeProvider):
         )
 
 
+class DuplicateProvider(FakeProvider):
+    def activate_address(self, destination):
+        self.calls.append(("activate", destination))
+        raise ProfeeXOrderError(
+            "activation",
+            "duplicate request",
+            "DUPLICATE_REQUEST",
+            temporary=True,
+        )
+
+
 class DestinationActivationTests(unittest.TestCase):
     def setUp(self):
         self.original_config = activation.config
@@ -704,6 +745,21 @@ class DestinationActivationTests(unittest.TestCase):
 
         self.assertTrue(result.activated)
         self.assertEqual(provider.calls, [("wait", "task-existing", "PROCESSING")])
+
+    def test_duplicate_activation_rechecks_destination_before_retrying(self):
+        redis_client = FakeRedis()
+        provider = DuplicateProvider()
+
+        result = activation.ensure_destination_activated(
+            DESTINATION,
+            quote_fn=self.quote_sequence(True, True, False),
+            provider=provider,
+            redis_client=redis_client,
+        )
+
+        self.assertFalse(result.activated)
+        self.assertEqual(result.status, "ALREADY_ACTIVE")
+        self.assertEqual(provider.calls, [("activate", DESTINATION)])
 
     def test_retryable_provider_failure_records_metric(self):
         redis_client = FakeRedis()
@@ -1206,8 +1262,10 @@ def test_ensure_activates_destination_when_allowed(self):
 
     original_estimate = payout_resources.estimate_fee_deposit_resources_for_usdt_payout
     original_activation = payout_resources.ensure_destination_activated
+    original_flag = payout_resources.config.TRON_USDT_PAYOUT_AUTO_ACTIVATE_DESTINATION
     payout_resources.estimate_fee_deposit_resources_for_usdt_payout = estimate
     payout_resources.ensure_destination_activated = lambda destination, *, quote_fn: calls.append(destination)
+    payout_resources.config.TRON_USDT_PAYOUT_AUTO_ACTIVATE_DESTINATION = True
     try:
         result = payout_resources.ensure_fee_deposit_resources_for_usdt_payout(
             DESTINATION,
@@ -1218,9 +1276,59 @@ def test_ensure_activates_destination_when_allowed(self):
     finally:
         payout_resources.estimate_fee_deposit_resources_for_usdt_payout = original_estimate
         payout_resources.ensure_destination_activated = original_activation
+        payout_resources.config.TRON_USDT_PAYOUT_AUTO_ACTIVATE_DESTINATION = original_flag
 
     self.assertEqual(calls, [DESTINATION])
     self.assertTrue(result.submit_ready)
+
+
+def test_ensure_maps_retryable_activation_error_to_resource_error(self):
+    from app import payout_resources
+    from app.payout_destination_activation import DestinationActivationError
+
+    quote = payout_resources.PayoutResourceQuote(
+        source_address=FEE_DEPOSIT,
+        destination=DESTINATION,
+        amount="1.25",
+        activation_required=True,
+        estimated_trx_burned="1.1",
+        energy=payout_resources.ResourceReadiness("profeex", 65000, 0, 65000),
+        bandwidth=payout_resources.ResourceReadiness("profeex", 346, 0, 346),
+        submit_ready=False,
+        blocking_code="DESTINATION_NOT_ACTIVATED",
+        blocking_reason="TRON payout destination is not activated",
+    )
+
+    def estimate(destination, amount, tron_client=None):
+        return quote
+
+    def activate(destination, *, quote_fn):
+        raise DestinationActivationError(
+            "ProfeeX activation unavailable",
+            code="PAYOUT_DESTINATION_ACTIVATION_UNAVAILABLE",
+            temporary=True,
+        )
+
+    original_estimate = payout_resources.estimate_fee_deposit_resources_for_usdt_payout
+    original_activation = payout_resources.ensure_destination_activated
+    original_flag = payout_resources.config.TRON_USDT_PAYOUT_AUTO_ACTIVATE_DESTINATION
+    payout_resources.estimate_fee_deposit_resources_for_usdt_payout = estimate
+    payout_resources.ensure_destination_activated = activate
+    payout_resources.config.TRON_USDT_PAYOUT_AUTO_ACTIVATE_DESTINATION = True
+    try:
+        with self.assertRaises(payout_resources.PayoutResourceError) as ctx:
+            payout_resources.ensure_fee_deposit_resources_for_usdt_payout(
+                DESTINATION,
+                Decimal("1.25"),
+                tron_client=object(),
+                allow_destination_activation=True,
+            )
+    finally:
+        payout_resources.estimate_fee_deposit_resources_for_usdt_payout = original_estimate
+        payout_resources.ensure_destination_activated = original_activation
+        payout_resources.config.TRON_USDT_PAYOUT_AUTO_ACTIVATE_DESTINATION = original_flag
+
+    self.assertEqual(ctx.exception.code, "PAYOUT_DESTINATION_ACTIVATION_UNAVAILABLE")
 ```
 
 - [ ] **Step 2: Write retryable execution boundary test**
@@ -1228,24 +1336,52 @@ def test_ensure_activates_destination_when_allowed(self):
 In `tests/test_payout_execution_boundaries.py`, add:
 
 ```python
-def test_retryable_activation_failure_returns_to_received_without_refund_state(self):
-    self.submit()
-    events = []
+def test_retryable_activation_resource_error_returns_to_received_without_refund_state(self):
+    from app import payout_resources
+    from app.payout_destination_activation import DestinationActivationError
 
-    def resource_ensurer(destination, amount, tron_client=None, allow_destination_activation=False):
-        events.append((destination, amount, tron_client, allow_destination_activation))
-        raise self.store_module.PayoutExecutionError(
+    self.submit()
+    original_flag = payout_resources.config.TRON_USDT_PAYOUT_AUTO_ACTIVATE_DESTINATION
+    payout_resources.config.TRON_USDT_PAYOUT_AUTO_ACTIVATE_DESTINATION = True
+    quote = payout_resources.PayoutResourceQuote(
+        source_address="fee-deposit",
+        destination=DESTINATION,
+        amount="25.000000",
+        activation_required=True,
+        estimated_trx_burned="1.1",
+        energy=payout_resources.ResourceReadiness("profeex", 65000, 0, 65000),
+        bandwidth=payout_resources.ResourceReadiness("profeex", 346, 0, 346),
+        submit_ready=False,
+        blocking_code="DESTINATION_NOT_ACTIVATED",
+        blocking_reason="TRON payout destination is not activated",
+    )
+
+    def estimate(destination, amount, tron_client=None):
+        return quote
+
+    def activate(destination, *, quote_fn):
+        raise DestinationActivationError(
             "ProfeeX activation unavailable",
             code="PAYOUT_DESTINATION_ACTIVATION_UNAVAILABLE",
-            status_code=503,
+            temporary=True,
         )
 
-    status = self.store_module.PayoutExecutionStore.execute(
-        "1",
-        wallet=BoundaryWallet(events, self.row),
-        resource_ensurer=resource_ensurer,
-        lease_owner="worker-1",
-    )
+    original_estimate = payout_resources.estimate_fee_deposit_resources_for_usdt_payout
+    original_activation = payout_resources.ensure_destination_activated
+    payout_resources.estimate_fee_deposit_resources_for_usdt_payout = estimate
+    payout_resources.ensure_destination_activated = activate
+    events = []
+    try:
+        status = self.store_module.PayoutExecutionStore.execute(
+            "1",
+            wallet=BoundaryWallet(events, self.row),
+            resource_ensurer=payout_resources.ensure_fee_deposit_resources_for_usdt_payout,
+            lease_owner="worker-1",
+        )
+    finally:
+        payout_resources.config.TRON_USDT_PAYOUT_AUTO_ACTIVATE_DESTINATION = original_flag
+        payout_resources.estimate_fee_deposit_resources_for_usdt_payout = original_estimate
+        payout_resources.ensure_destination_activated = original_activation
 
     self.assertEqual(status["state"], "RECEIVED")
     self.assertEqual(status["failure_class"], "TRANSIENT")
@@ -1282,7 +1418,7 @@ def test_terminal_activation_failure_stays_failed_pre_broadcast_without_reconcil
     )
 
     self.assertEqual(status["state"], "FAILED_PRE_BROADCAST")
-    self.assertEqual(status["failure_class"], "TERMINAL_PRE_BROADCAST")
+    self.assertEqual(status["failure_class"], "PREFLIGHT")
     self.assertEqual(status["error_code"], "INVALID_ADDRESS")
     self.assertFalse(status["reconciliation_required"])
     row = self.row()
@@ -1401,7 +1537,10 @@ Expected: fails because helper opt-in and retryable activation codes do not exis
 In `app/payout_resources.py`, import the orchestrator:
 
 ```python
-from app.payout_destination_activation import ensure_destination_activated
+from app.payout_destination_activation import (
+    DestinationActivationError,
+    ensure_destination_activated,
+)
 ```
 
 Change the helper signature:
@@ -1425,10 +1564,13 @@ Immediately after the first quote:
         and allow_destination_activation
         and config.TRON_USDT_PAYOUT_AUTO_ACTIVATE_DESTINATION
     ):
-        ensure_destination_activated(
-            destination,
-            quote_fn=lambda receiver: estimate_usdt_transfer_fee_via_profeex(receiver),
-        )
+        try:
+            ensure_destination_activated(
+                destination,
+                quote_fn=lambda receiver: estimate_usdt_transfer_fee_via_profeex(receiver),
+            )
+        except DestinationActivationError as exc:
+            raise PayoutResourceError(str(exc), code=exc.code) from exc
         quote = estimate_fee_deposit_resources_for_usdt_payout(
             destination,
             amount,
@@ -1456,9 +1598,9 @@ RETRYABLE_PRE_BROADCAST_ERROR_CODES = {
 Replace the special-case `PAYOUT_RESOURCE_LOCK_UNAVAILABLE` block in `_mark_failed_or_reconciliation()` with:
 
 ```python
+        error_code = getattr(exc, "code", None)
         if (
-            isinstance(exc, PayoutExecutionError)
-            and exc.code in RETRYABLE_PRE_BROADCAST_ERROR_CODES
+            error_code in RETRYABLE_PRE_BROADCAST_ERROR_CODES
             and not cls._has_unsafe_side_effect(row)
         ):
             row = cls._transition(
@@ -1469,7 +1611,7 @@ Replace the special-case `PAYOUT_RESOURCE_LOCK_UNAVAILABLE` block in `_mark_fail
                 attempt_id=None,
                 resource_reservation_id=None,
                 failure_class="TRANSIENT",
-                error_code=exc.code,
+                error_code=error_code,
                 error_message=str(exc),
                 reconciliation_required=0,
             )
@@ -1570,14 +1712,21 @@ def test_created_preflight_structured_503_records_retryable_diagnostic_without_t
     self.assertIsNotNone(execution.next_dispatch_at)
 ```
 
-Update `FakeSidecarClient.preflight()` in the test file to support the injected exception:
+Update `FakeSidecarClient.__init__()` in the test file to initialize the injected exception:
+
+```python
+        self.raise_on_preflight = None
+```
+
+Update `FakeSidecarClient.preflight()` to support the injected exception:
 
 ```python
     def preflight(self, execution):
-        self.calls.append(("preflight", execution.id))
+        self.calls.append(("preflight", execution.id, execution.state.name))
+        self.assert_execution_committed(execution.id)
         if self.raise_on_preflight:
             raise self.raise_on_preflight
-        return self.preflight_response
+        return dict(self.preflight_response)
 ```
 
 - [ ] **Step 3: Run SHKeeper core tests and verify they fail**
@@ -1749,6 +1898,8 @@ void sameVersionCreatedTransientDiagnosticDoesNotRequireReconciliation() throws 
     ShKeeperPayoutExecution execution = executionRepository.findByExternalId("PWEB-DIAG").orElseThrow();
     assertThat(execution.getState()).isEqualTo(ShKeeperPayoutState.CREATED.name());
     assertThat(execution.isReconciliationRequired()).isFalse();
+    assertThat(execution.getErrorCode()).isEqualTo("SIDECAR_PREFLIGHT_UNAVAILABLE");
+    assertThat(execution.getErrorMessage()).isEqualTo("Sidecar preflight endpoint returned HTTP 503");
 }
 ```
 
@@ -1795,7 +1946,13 @@ Expected: transient diagnostic test fails because same-version error changes cur
 
 - [ ] **Step 4: Implement narrow same-version diagnostic predicate**
 
-In `ShKeeperPayoutStateTransactionService.java`, add constants:
+In `ShKeeperPayoutStateTransactionService.java`, add import:
+
+```java
+import java.util.Set;
+```
+
+Add constants:
 
 ```java
     private static final Set<String> SAME_VERSION_TRANSIENT_DIAGNOSTIC_CODES = Set.of(
@@ -1834,8 +1991,8 @@ Add helpers:
                 && Objects.equals(execution.getStateTransitionId(), incoming.stateTransitionId())
                 && Objects.equals(execution.getRequestHash(), incoming.requestHash())
                 && Objects.equals(execution.getSidecarPayloadHash(), incoming.sidecarPayloadHash())
-                && !hasText(execution.getSidecarExecutionId())
-                && !hasText(incoming.sidecarExecutionId())
+                && execution.getSidecarExecutionId() == null
+                && incoming.sidecarExecutionId() == null
                 && !hasBroadcastEvidence(execution, ShKeeperPayoutState.CREATED)
                 && isEmptyJsonArray(execution.getTxidsJson())
                 && isEmptyJsonArray(execution.getMessageHashesJson())
