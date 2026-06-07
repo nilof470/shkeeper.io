@@ -224,7 +224,7 @@ docker buildx imagetools inspect ghcr.io/nilof470/ethereum-shkeeper:${TAG}
 For the current payout auth fix the expected tag is:
 
 ```text
-ghcr.io/nilof470/ethereum-shkeeper:5ebee87
+ghcr.io/nilof470/ethereum-shkeeper:69511a3
 ```
 
 ## Local Helm Chart Release
@@ -330,19 +330,23 @@ helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper \
 Deploy the staged release with all rails still paused and kill-switched in
 `/root/shkeeper-payout-values.yaml`. The production VPS deploy path must not
 depend on a local `/opt/shkeeper.io` checkout or on `git pull`; use the
-published OCI chart and the release image tag explicitly in the Helm command.
+published OCI chart and root-only values files as the source of truth.
 
 ```bash
-export HELM_RELEASE_NAMESPACE=default
-export PAYOUT_CHART_VERSION=1.7.28-nilof470.10
-export SHKEEPER_IMAGE=ghcr.io/nilof470/shkeeper.io:92263d0
+export HELM_NS=default
+export APP_NS=shkeeper
+export CHART_REF=oci://ghcr.io/nilof470/helm-charts/shkeeper
+export CHART_VERSION=1.7.28-nilof470.12
 
-helm upgrade --install -n "${HELM_RELEASE_NAMESPACE}" \
-  -f /root/shkeeper-values.yaml \
+helm -n "$HELM_NS" get values shkeeper -o yaml > /root/shkeeper-current-values.yaml
+
+helm upgrade shkeeper "$CHART_REF" \
+  --version "$CHART_VERSION" \
+  -n "$HELM_NS" \
+  -f /root/shkeeper-current-values.yaml \
   -f /root/shkeeper-payout-values.yaml \
-  --set-string shkeeper.image="${SHKEEPER_IMAGE}" \
-  shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
-  --version "${PAYOUT_CHART_VERSION}" --timeout 300s
+  --timeout 15m \
+  --history-max 2
 ```
 
 Enable only one rail at a time after the restore-drill, smoke-payout, callback,
@@ -352,9 +356,9 @@ and upstream ledger gates pass by changing that rail's `paused` and
 ### Production TRON Payout Activation
 
 Persist production payout activation in `/root/shkeeper-payout-values.yaml`.
-Do not rely on `--set` for normal production operation; use `--set` only for a
-temporary emergency override that is immediately copied back into the values
-file.
+Do not use `--set` for normal payout operation. Edit the root-only values file
+and rerun the same file-only Helm upgrade so the server state remains
+recoverable.
 
 The TRON payout release validated on 2026-06-06 used these images:
 
@@ -423,28 +427,32 @@ grep -n -A30 "tron_shkeeper:" \
 
 If any chart-owned key is under `tron_shkeeper.extraEnv`, remove it and express
 the setting through `payouts.rails` or the chart's payout secret references
-instead. `PAYOUT_CONSUMER_KEYS_JSON` is valid as
-`payouts.secrets.sidecarConsumerKeys.key`; it is only invalid as a direct sidecar
-`extraEnv` value.
+instead. In managed-secret mode the chart renders `PAYOUT_CONSUMER_KEYS_JSON`
+for sidecars from `payouts.auth.shkeeperToSidecars`; in legacy external-secret
+mode it may be referenced as `payouts.secrets.sidecarConsumerKeys.key`. It is
+only invalid as a direct sidecar `extraEnv` value.
 
-Use the two-file deployment shape on production:
+Use the file-only deployment shape on production. Image tags, rail state, and
+payout auth all come from the two root-owned values files.
 
 ```bash
-export HELM_RELEASE_NAMESPACE=default
-export SHKEEPER_WORKLOAD_NAMESPACE=shkeeper
-export CHART_VERSION=1.7.28-nilof470.10
-export SHKEEPER_IMAGE=ghcr.io/nilof470/shkeeper.io:92263d0
+export HELM_NS=default
+export APP_NS=shkeeper
+export CHART_REF=oci://ghcr.io/nilof470/helm-charts/shkeeper
+export CHART_VERSION=1.7.28-nilof470.12
 
 helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper \
-  --version "${CHART_VERSION}"
+  --version "$CHART_VERSION"
 
-helm upgrade --install -n "${HELM_RELEASE_NAMESPACE}" \
-  -f /root/shkeeper-values.yaml \
+helm -n "$HELM_NS" get values shkeeper -o yaml > /root/shkeeper-current-values.yaml
+
+helm upgrade shkeeper "$CHART_REF" \
+  --version "$CHART_VERSION" \
+  -n "$HELM_NS" \
+  -f /root/shkeeper-current-values.yaml \
   -f /root/shkeeper-payout-values.yaml \
-  --set-string shkeeper.image="${SHKEEPER_IMAGE}" \
-  shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
-  --version "${CHART_VERSION}" \
-  --timeout 300s
+  --timeout 15m \
+  --history-max 2
 ```
 
 Do not use `--no-hooks` for the normal payout deployment path. The chart hooks
@@ -454,24 +462,24 @@ new Deployments but stale payout schema or rail state.
 Verify the release after the upgrade:
 
 ```bash
-helm status shkeeper -n "${HELM_RELEASE_NAMESPACE}"
-helm history shkeeper -n "${HELM_RELEASE_NAMESPACE}" --max 5
+helm status shkeeper -n "$HELM_NS"
+helm history shkeeper -n "$HELM_NS" --max 5
 
-helm get values shkeeper -n "${HELM_RELEASE_NAMESPACE}" -a | grep -A20 "tronUsdt:"
+helm get values shkeeper -n "$HELM_NS" -a | grep -A20 "tronUsdt:"
 
 kubectl rollout status deployment/shkeeper-deployment \
-  -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
+  -n "$APP_NS" --timeout=180s
 kubectl rollout status deployment/tron-shkeeper \
-  -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
+  -n "$APP_NS" --timeout=180s
 kubectl rollout status deployment/shkeeper-payout-execution-reconciler \
-  -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
+  -n "$APP_NS" --timeout=180s
 kubectl rollout status deployment/shkeeper-payout-callback-dispatcher \
-  -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
+  -n "$APP_NS" --timeout=180s
 kubectl rollout status deployment/tron-usdt-payouts \
-  -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
+  -n "$APP_NS" --timeout=180s
 
 kubectl get deploy -A | grep -E 'tron-usdt-payouts|tron-shkeeper|shkeeper-payout'
-kubectl get pods -n "${SHKEEPER_WORKLOAD_NAMESPACE}" -o wide
+kubectl get pods -n "$APP_NS" -o wide
 ```
 
 The expected active TRON payout values are:
@@ -486,11 +494,11 @@ queue: tron_usdt_fee_payouts
 Check the deployed image tags:
 
 ```bash
-kubectl get deployment shkeeper-deployment -n "${SHKEEPER_WORKLOAD_NAMESPACE}" \
+kubectl get deployment shkeeper-deployment -n "$APP_NS" \
   -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
-kubectl get deployment tron-shkeeper -n "${SHKEEPER_WORKLOAD_NAMESPACE}" \
+kubectl get deployment tron-shkeeper -n "$APP_NS" \
   -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
-kubectl get deployment tron-usdt-payouts -n "${SHKEEPER_WORKLOAD_NAMESPACE}" \
+kubectl get deployment tron-usdt-payouts -n "$APP_NS" \
   -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
 ```
 
@@ -498,13 +506,13 @@ Check payout logs:
 
 ```bash
 kubectl logs deployment/tron-usdt-payouts \
-  -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --tail=100
+  -n "$APP_NS" --tail=100
 kubectl logs deployment/shkeeper-payout-execution-reconciler \
-  -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --tail=100
+  -n "$APP_NS" --tail=100
 kubectl logs deployment/shkeeper-payout-callback-dispatcher \
-  -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --tail=100
+  -n "$APP_NS" --tail=100
 kubectl logs deployment/tron-shkeeper \
-  -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --all-containers --tail=100
+  -n "$APP_NS" --all-containers --tail=100
 ```
 
 Finish the production gate with a small Grither Pay TRON USDT payout. Confirm
@@ -516,9 +524,9 @@ Pay.
 After a successful smoke payout, save the working server state:
 
 ```bash
-helm get values shkeeper -n "${HELM_RELEASE_NAMESPACE}" -a \
+helm get values shkeeper -n "$HELM_NS" -a \
   > /root/shkeeper-values-working-$(date +%Y%m%d%H%M%S).yaml
-kubectl get deploy -n "${SHKEEPER_WORKLOAD_NAMESPACE}" -o wide \
+kubectl get deploy -n "$APP_NS" -o wide \
   > /root/shkeeper-deployments-working-$(date +%Y%m%d%H%M%S).txt
 ```
 
@@ -526,14 +534,14 @@ Troubleshooting:
 
 - `Could not locate a version matching provided version string` means
   `CHART_VERSION` is empty or wrong. Export
-  `CHART_VERSION=1.7.28-nilof470.10` and confirm with `helm show chart`.
+  `CHART_VERSION=1.7.28-nilof470.12` and confirm with `helm show chart`.
 - `tron_shkeeper.extraEnv.TRON_USDT_PAYOUT_RESOURCE_PROVISIONING_ENABLED is
   managed by payouts.rails` means a chart-owned key is set directly under
   `tron_shkeeper.extraEnv`. Remove the direct env value from the values file.
 - `deployment/tron-usdt-payouts not found` means either the workload namespace is
   wrong or the final Helm values still have `payouts.rails.tronUsdt.paused=true`
   or `payouts.rails.tronUsdt.killSwitch=true`. Check with
-  `helm get values shkeeper -n "${HELM_RELEASE_NAMESPACE}" -a | grep -A20 "tronUsdt:"`,
+  `helm get values shkeeper -n "$HELM_NS" -a | grep -A20 "tronUsdt:"`,
   then fix `/root/shkeeper-payout-values.yaml` and rerun the same
   Helm upgrade.
 
@@ -598,7 +606,7 @@ read -s GHCR_TOKEN
 echo "$GHCR_TOKEN" | helm registry login ghcr.io -u nilof470 --password-stdin
 unset GHCR_TOKEN
 
-helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper --version 1.7.28-nilof470.10
+helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper --version 1.7.28-nilof470.12
 ```
 
 ## Namespace and Private GHCR Pull Secret
@@ -706,7 +714,7 @@ passwords, or Kubernetes secrets.
 
 The Helm chart fork is the source of truth for Kubernetes manifests. It is
 published as `oci://ghcr.io/nilof470/helm-charts/shkeeper` version
-`1.7.28-nilof470.10`. Use the published OCI chart directly for production
+`1.7.28-nilof470.12`. Use the published OCI chart directly for production
 deploys. This keeps a new VPS deployment independent from a local chart
 checkout.
 
@@ -722,32 +730,34 @@ active, the chart renders `tron-shkeeper` as the API/tasks/redis sidecar and
 `tron_usdt_fee_payouts`.
 
 ```bash
-helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper --version 1.7.28-nilof470.10
+helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper --version 1.7.28-nilof470.12
 ```
 
-The production deploy command is a direct Helm upgrade. The target VPS does not
-need a local repository checkout for this step.
+The production deploy command is a direct Helm upgrade from root-only values
+files. The target VPS does not need a local repository checkout for this step.
 
 ```bash
-export HELM_RELEASE_NAMESPACE=default
-export SHKEEPER_WORKLOAD_NAMESPACE=shkeeper
-export CHART_VERSION=1.7.28-nilof470.10
-export SHKEEPER_IMAGE=ghcr.io/nilof470/shkeeper.io:92263d0
+export HELM_NS=default
+export APP_NS=shkeeper
+export CHART_REF=oci://ghcr.io/nilof470/helm-charts/shkeeper
+export CHART_VERSION=1.7.28-nilof470.12
 
-helm upgrade --install -n "${HELM_RELEASE_NAMESPACE}" \
-  -f /root/shkeeper-values.yaml \
+helm -n "$HELM_NS" get values shkeeper -o yaml > /root/shkeeper-current-values.yaml
+
+helm upgrade shkeeper "$CHART_REF" \
+  --version "$CHART_VERSION" \
+  -n "$HELM_NS" \
+  -f /root/shkeeper-current-values.yaml \
   -f /root/shkeeper-payout-values.yaml \
-  --set-string shkeeper.image="${SHKEEPER_IMAGE}" \
-  shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
-  --version "${CHART_VERSION}" \
-  --timeout 300s
+  --timeout 15m \
+  --history-max 2
 
-kubectl rollout status deployment/shkeeper-deployment -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
-kubectl rollout status deployment/tron-shkeeper -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
+kubectl rollout status deployment/shkeeper-deployment -n "$APP_NS" --timeout=180s
+kubectl rollout status deployment/tron-shkeeper -n "$APP_NS" --timeout=180s
 
 # Run these after TRON payout execution is active.
-kubectl rollout status deployment/tron-usdt-payouts -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
-kubectl get pods -n "${SHKEEPER_WORKLOAD_NAMESPACE}" | grep tron-usdt-payouts
+kubectl rollout status deployment/tron-usdt-payouts -n "$APP_NS" --timeout=180s
+kubectl get pods -n "$APP_NS" | grep tron-usdt-payouts
 ```
 
 Expected TRON pod shape when payout execution is active:
@@ -1331,7 +1341,7 @@ Real deposits add more calls:
 ```bash
 helm upgrade --install -n default -f /root/shkeeper-values.yaml \
   shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
-  --version 1.7.28-nilof470.10 --timeout 300s
+  --version 1.7.28-nilof470.12 --timeout 300s
 ```
 
 Watch startup:
@@ -1484,96 +1494,6 @@ upstream product ledger. In this chart, `payouts.shkeeperWorkers.batchSize`
 controls only worker batch processing, and optional wallet balance values are
 alert thresholds.
 
-Create the payout secrets in the SHKeeper namespace. Keep the JSON files outside
-git and replace every secret value before applying.
-
-```bash
-cat >/root/payout-consumer-keys.json <<'JSON'
-{
-  "grither-pay": {
-    "grither-pay-to-shkeeper-v1": {
-      "secret": "REPLACE_WITH_GRITHER_TO_SHKEEPER_SECRET",
-      "rails": ["TRON-USDT", "TON-USDT", "ETH-USDT"]
-    }
-  }
-}
-JSON
-
-cat >/root/payout-sidecar-signing-keys.json <<'JSON'
-{
-  "grither-pay": {
-    "shkeeper-to-sidecars-v1": {
-      "secret": "REPLACE_WITH_SHKEEPER_TO_SIDECARS_SECRET",
-      "rails": ["TRON-USDT", "TON-USDT", "ETH-USDT"]
-    }
-  }
-}
-JSON
-
-cat >/root/payout-callback-keys.json <<'JSON'
-{
-  "grither-pay": {
-    "shkeeper-callbacks-v1": {
-      "secret": "REPLACE_WITH_SHKEEPER_CALLBACK_SECRET"
-    }
-  }
-}
-JSON
-
-cat >/root/payout-callback-endpoints.json <<'JSON'
-{
-  "grither-pay": {
-    "grither-pay-main": {
-      "url": "https://REPLACE_WITH_GRITHER_PAY_HOST/api/webhooks/shkeeper/payout-executions",
-      "path": "/api/webhooks/shkeeper/payout-executions"
-    }
-  }
-}
-JSON
-```
-
-The sidecar consumer Secret intentionally uses the same canonical key file as
-`PAYOUT_SIDECAR_KEYS_JSON`. SHKeeper selects a key by rail and signs sidecar
-requests with that key id; TRON, TON, and ETH sidecars all validate the same
-nested `{consumer: {key_id: {secret, rails}}}` contract.
-
-Do not create the sidecar consumer Secret from `/root/payout-consumer-keys.json`
-and do not replace `shkeeper-to-sidecars-v1` with rail-local key ids such as
-`shkeeper-to-eth-v1`. If the SHKeeper signer key id and sidecar consumer key map
-drift, sidecar preflight fails before broadcast with `PAYOUT_AUTH_UNKNOWN_KEY`.
-
-Apply or update the Kubernetes secrets:
-
-```bash
-SHKEEPER_WORKLOAD_NAMESPACE=shkeeper
-
-kubectl -n "${SHKEEPER_WORKLOAD_NAMESPACE}" create secret generic grither-prod-shkeeper-payout-consumer-keys \
-  --from-file=PAYOUT_CONSUMER_KEYS_JSON=/root/payout-consumer-keys.json \
-  --dry-run=client -o yaml | kubectl apply -f -
-
-kubectl -n "${SHKEEPER_WORKLOAD_NAMESPACE}" create secret generic grither-prod-shkeeper-payout-sidecar-signing-keys \
-  --from-file=PAYOUT_SIDECAR_KEYS_JSON=/root/payout-sidecar-signing-keys.json \
-  --dry-run=client -o yaml | kubectl apply -f -
-
-kubectl -n "${SHKEEPER_WORKLOAD_NAMESPACE}" create secret generic grither-prod-sidecar-payout-consumer-keys \
-  --from-file=PAYOUT_CONSUMER_KEYS_JSON=/root/payout-sidecar-signing-keys.json \
-  --dry-run=client -o yaml | kubectl apply -f -
-
-kubectl -n "${SHKEEPER_WORKLOAD_NAMESPACE}" create secret generic grither-prod-shkeeper-payout-callback-keys \
-  --from-file=PAYOUT_CALLBACK_KEYS_JSON=/root/payout-callback-keys.json \
-  --dry-run=client -o yaml | kubectl apply -f -
-
-kubectl -n "${SHKEEPER_WORKLOAD_NAMESPACE}" create secret generic grither-prod-shkeeper-payout-callback-endpoints \
-  --from-file=PAYOUT_CALLBACK_ENDPOINTS_JSON=/root/payout-callback-endpoints.json \
-  --dry-run=client -o yaml | kubectl apply -f -
-```
-
-Quickly verify the ETH sidecar sees the canonical key id:
-
-```bash
-kubectl -n "${SHKEEPER_WORKLOAD_NAMESPACE}" exec deployment/ethereum-shkeeper -c app -- python -c 'import os,json; d=json.loads(os.environ.get("PAYOUT_CONSUMER_KEYS_JSON","{}")).get("grither-pay",{}); print("rails =", d.get("rails")); print("keys =", list((d.get("keys") or {}).keys()) or [k for k,v in d.items() if isinstance(v,dict) and "secret" in v])'
-```
-
 Create `/root/shkeeper-payout-values.yaml`. This stages all three USDT rails
 and their workers, but keeps payout execution disabled in the SHKeeper rail
 catalog by leaving `paused: true` and `killSwitch: true`. Flip one rail at a
@@ -1582,6 +1502,18 @@ The sidecar `*.usdtPayoutWorker.enabled` flags below intentionally stay
 `false`: the chart derives the dedicated payout worker from
 `payouts.rails.*.enabled`, while the sidecar-local flag remains only a guarded
 manual override.
+
+This root-only file also enables Helm-managed payout auth Secrets. Do not commit
+it. Replace the `PASTE_ON_SERVER_ONLY` markers on the production server before
+rendering or deploying. In managed mode, secret material is present in
+`/root/shkeeper-payout-values.yaml`, rendered Kubernetes Secrets, and Helm
+release metadata. Restrict root/admin access to the server and cluster, and do
+not print, log, paste, or render this file with `helm --debug`.
+
+The chart renders one shared sidecar auth key, `shkeeper-to-sidecars-v1`, into
+both SHKeeper's sidecar signer payload and every enabled sidecar verifier
+payload. TRON, TON, and ETH sidecars all validate the same key; do not create
+rail-local sidecar consumer keys.
 
 ```yaml
 dev:
@@ -1596,6 +1528,22 @@ payouts:
   consumer: grither-pay
   sidecarRequestTimeoutSeconds: 10
   authMaxAgeSeconds: 300
+  managedSecrets:
+    enabled: true
+  auth:
+    gritherToShkeeper:
+      keyId: grither-pay-to-shkeeper-v1
+      secret: "PASTE_ON_SERVER_ONLY"
+    shkeeperToSidecars:
+      keyId: shkeeper-to-sidecars-v1
+      secret: "PASTE_ON_SERVER_ONLY"
+    callbacks:
+      keyId: shkeeper-callbacks-v1
+      secret: "PASTE_ON_SERVER_ONLY"
+    callbackEndpoints:
+      grither-pay-main:
+        url: "https://dev.api.grither.company/api/webhooks/shkeeper/payout-executions"
+        path: "/api/webhooks/shkeeper/payout-executions"
   networkPolicies:
     enabled: true
   storage:
@@ -1609,22 +1557,6 @@ payouts:
     enabled: true
     intervalSeconds: 5
     batchSize: 50
-  secrets:
-    consumerKeys:
-      name: grither-prod-shkeeper-payout-consumer-keys
-      key: PAYOUT_CONSUMER_KEYS_JSON
-    sidecarSigningKeys:
-      name: grither-prod-shkeeper-payout-sidecar-signing-keys
-      key: PAYOUT_SIDECAR_KEYS_JSON
-    sidecarConsumerKeys:
-      name: grither-prod-sidecar-payout-consumer-keys
-      key: PAYOUT_CONSUMER_KEYS_JSON
-    callbackKeys:
-      name: grither-prod-shkeeper-payout-callback-keys
-      key: PAYOUT_CALLBACK_KEYS_JSON
-    callbackEndpoints:
-      name: grither-prod-shkeeper-payout-callback-endpoints
-      key: PAYOUT_CALLBACK_ENDPOINTS_JSON
   rails:
     tronUsdt:
       enabled: true
@@ -1702,17 +1634,20 @@ writers horizontally without moving the storage mode to a server database.
 Apply the staged payout release with the published payout chart:
 
 ```bash
-export PAYOUT_CHART_VERSION=1.7.28-nilof470.10
-export HELM_RELEASE_NAMESPACE=default
-export SHKEEPER_WORKLOAD_NAMESPACE=shkeeper
-export SHKEEPER_IMAGE=ghcr.io/nilof470/shkeeper.io:92263d0
+export HELM_NS=default
+export APP_NS=shkeeper
+export CHART_REF=oci://ghcr.io/nilof470/helm-charts/shkeeper
+export CHART_VERSION=1.7.28-nilof470.12
 
-helm upgrade --install -n "${HELM_RELEASE_NAMESPACE}" \
-  -f /root/shkeeper-values.yaml \
+helm -n "$HELM_NS" get values shkeeper -o yaml > /root/shkeeper-current-values.yaml
+
+helm upgrade shkeeper "$CHART_REF" \
+  --version "$CHART_VERSION" \
+  -n "$HELM_NS" \
+  -f /root/shkeeper-current-values.yaml \
   -f /root/shkeeper-payout-values.yaml \
-  --set-string shkeeper.image="${SHKEEPER_IMAGE}" \
-  shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
-  --version "${PAYOUT_CHART_VERSION}" --timeout 300s
+  --timeout 15m \
+  --history-max 2
 ```
 
 Verify that SHKeeper workers, sidecar API deployments, and rail sync are
@@ -1720,23 +1655,21 @@ rendered before enabling client traffic. Dedicated payout workers render only
 after the selected rail has both `paused=false` and `killSwitch=false`.
 
 ```bash
-SHKEEPER_WORKLOAD_NAMESPACE=shkeeper
+kubectl rollout status deployment/shkeeper-deployment -n "$APP_NS" --timeout=180s
+kubectl rollout status deployment/shkeeper-payout-execution-reconciler -n "$APP_NS" --timeout=180s
+kubectl rollout status deployment/shkeeper-payout-callback-dispatcher -n "$APP_NS" --timeout=180s
+kubectl rollout status deployment/tron-shkeeper -n "$APP_NS" --timeout=180s
+kubectl rollout status deployment/ton-shkeeper -n "$APP_NS" --timeout=180s
+kubectl rollout status deployment/ethereum-shkeeper -n "$APP_NS" --timeout=180s
 
-kubectl rollout status deployment/shkeeper-deployment -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
-kubectl rollout status deployment/shkeeper-payout-execution-reconciler -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
-kubectl rollout status deployment/shkeeper-payout-callback-dispatcher -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
-kubectl rollout status deployment/tron-shkeeper -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
-kubectl rollout status deployment/ton-shkeeper -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
-kubectl rollout status deployment/ethereum-shkeeper -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
+kubectl get job -n "$APP_NS" shkeeper-payout-rail-sync
+kubectl get pods -n "$APP_NS" | grep -E 'shkeeper-payout|tron-shkeeper|ton-shkeeper|ethereum-shkeeper'
 
-kubectl get job -n "${SHKEEPER_WORKLOAD_NAMESPACE}" shkeeper-payout-rail-sync
-kubectl get pods -n "${SHKEEPER_WORKLOAD_NAMESPACE}" | grep -E 'shkeeper-payout|tron-shkeeper|ton-shkeeper|ethereum-shkeeper'
-
-kubectl get deployment tron-shkeeper -n "${SHKEEPER_WORKLOAD_NAMESPACE}" \
+kubectl get deployment tron-shkeeper -n "$APP_NS" \
   -o jsonpath='{.spec.template.spec.containers[*].name}{"\n"}'
-kubectl get deployment ton-shkeeper -n "${SHKEEPER_WORKLOAD_NAMESPACE}" \
+kubectl get deployment ton-shkeeper -n "$APP_NS" \
   -o jsonpath='{.spec.template.spec.containers[*].name}{"\n"}'
-kubectl get deployment ethereum-shkeeper -n "${SHKEEPER_WORKLOAD_NAMESPACE}" \
+kubectl get deployment ethereum-shkeeper -n "$APP_NS" \
   -o jsonpath='{.spec.template.spec.containers[*].name}{"\n"}'
 ```
 
@@ -1756,8 +1689,8 @@ Kubernetes but sync to `execution_enabled=false` in SHKeeper.
 After enabling TRON payout execution, verify the worker Deployment:
 
 ```bash
-kubectl rollout status deployment/tron-usdt-payouts -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
-kubectl get deployment tron-usdt-payouts -n "${SHKEEPER_WORKLOAD_NAMESPACE}" \
+kubectl rollout status deployment/tron-usdt-payouts -n "$APP_NS" --timeout=180s
+kubectl get deployment tron-usdt-payouts -n "$APP_NS" \
   -o jsonpath='{.spec.template.spec.containers[*].name}{"\n"}'
 ```
 
@@ -1777,47 +1710,43 @@ namespace, so confirm the release namespace first:
 helm list -A | grep shkeeper
 ```
 
-For the payout release, pass the published chart version and image tags directly
-to Helm. This keeps the target VPS deploy step independent from a repository
-checkout and avoids editing the values files just to select a build.
+For the payout release, persist the published chart version and image tags in
+`/root/shkeeper-payout-values.yaml`, then rerun the file-only upgrade. This
+keeps the target VPS deploy step independent from a repository checkout and
+avoids one-off CLI overrides that drift from the server values.
 
 ```bash
-export PAYOUT_CHART_VERSION=1.7.28-nilof470.10
-export HELM_RELEASE_NAMESPACE=default
-export SHKEEPER_WORKLOAD_NAMESPACE=shkeeper
-export SHKEEPER_IMAGE=ghcr.io/nilof470/shkeeper.io:92263d0
-export TRON_IMAGE=ghcr.io/nilof470/tron-shkeeper:038e93b
-export TON_IMAGE=ghcr.io/nilof470/ton-shkeeper:REPLACE_WITH_TON_TAG
-export ETH_IMAGE=ghcr.io/nilof470/ethereum-shkeeper:REPLACE_WITH_ETH_TAG
+export HELM_NS=default
+export APP_NS=shkeeper
+export CHART_REF=oci://ghcr.io/nilof470/helm-charts/shkeeper
+export CHART_VERSION=1.7.28-nilof470.12
 
-helm upgrade --install -n "${HELM_RELEASE_NAMESPACE}" \
-  -f /root/shkeeper-values.yaml \
+helm -n "$HELM_NS" get values shkeeper -o yaml > /root/shkeeper-current-values.yaml
+
+helm upgrade shkeeper "$CHART_REF" \
+  --version "$CHART_VERSION" \
+  -n "$HELM_NS" \
+  -f /root/shkeeper-current-values.yaml \
   -f /root/shkeeper-payout-values.yaml \
-  --set-string shkeeper.image="${SHKEEPER_IMAGE}" \
-  --set-string tron_shkeeper.image="${TRON_IMAGE}" \
-  --set-string ton_shkeeper.image="${TON_IMAGE}" \
-  --set-string ethereum_shkeeper.image="${ETH_IMAGE}" \
-  shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
-  --version "${PAYOUT_CHART_VERSION}" --timeout 300s
+  --timeout 15m \
+  --history-max 2
 ```
 
 Verify the deployed images and rollout:
 
 ```bash
-SHKEEPER_WORKLOAD_NAMESPACE=shkeeper
-
-kubectl rollout status deployment/shkeeper-deployment -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
-kubectl rollout status deployment/tron-shkeeper -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
-kubectl rollout status deployment/ton-shkeeper -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
-kubectl rollout status deployment/ethereum-shkeeper -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
-kubectl rollout status deployment/shkeeper-payout-execution-reconciler -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
-kubectl rollout status deployment/shkeeper-payout-callback-dispatcher -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
-kubectl get deployment shkeeper-deployment -n "${SHKEEPER_WORKLOAD_NAMESPACE}" \
+kubectl rollout status deployment/shkeeper-deployment -n "$APP_NS" --timeout=180s
+kubectl rollout status deployment/tron-shkeeper -n "$APP_NS" --timeout=180s
+kubectl rollout status deployment/ton-shkeeper -n "$APP_NS" --timeout=180s
+kubectl rollout status deployment/ethereum-shkeeper -n "$APP_NS" --timeout=180s
+kubectl rollout status deployment/shkeeper-payout-execution-reconciler -n "$APP_NS" --timeout=180s
+kubectl rollout status deployment/shkeeper-payout-callback-dispatcher -n "$APP_NS" --timeout=180s
+kubectl get deployment shkeeper-deployment -n "$APP_NS" \
   -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
-kubectl get deployment tron-shkeeper -n "${SHKEEPER_WORKLOAD_NAMESPACE}" -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
-kubectl get deployment ton-shkeeper -n "${SHKEEPER_WORKLOAD_NAMESPACE}" -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
-kubectl get deployment ethereum-shkeeper -n "${SHKEEPER_WORKLOAD_NAMESPACE}" -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
-kubectl get pods -n "${SHKEEPER_WORKLOAD_NAMESPACE}" | grep -E 'shkeeper-payout|tron-shkeeper|ton-shkeeper|ethereum-shkeeper'
+kubectl get deployment tron-shkeeper -n "$APP_NS" -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
+kubectl get deployment ton-shkeeper -n "$APP_NS" -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
+kubectl get deployment ethereum-shkeeper -n "$APP_NS" -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
+kubectl get pods -n "$APP_NS" | grep -E 'shkeeper-payout|tron-shkeeper|ton-shkeeper|ethereum-shkeeper'
 ```
 
 Expected image output shape:
@@ -1835,8 +1764,8 @@ ethereum-shkeeper ... 3/3 Running
 If TRON payout execution is active, also verify:
 
 ```bash
-kubectl rollout status deployment/tron-usdt-payouts -n "${SHKEEPER_WORKLOAD_NAMESPACE}" --timeout=180s
-kubectl get deployment tron-usdt-payouts -n "${SHKEEPER_WORKLOAD_NAMESPACE}" -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
+kubectl rollout status deployment/tron-usdt-payouts -n "$APP_NS" --timeout=180s
+kubectl get deployment tron-usdt-payouts -n "$APP_NS" -o jsonpath='{.spec.template.spec.containers[*].image}{"\n"}'
 ```
 
 If TON or ETH payout execution is active, their sidecar pods include
@@ -1894,7 +1823,7 @@ helm list -A | grep shkeeper
 
 helm upgrade --install -n default -f /root/shkeeper-values.yaml \
   shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
-  --version 1.7.28-nilof470.10 --timeout 300s
+  --version 1.7.28-nilof470.12 --timeout 300s
 
 kubectl rollout status deployment/ton-shkeeper -n shkeeper --timeout=180s
 ```
