@@ -429,7 +429,9 @@ addresses_doc = {
 transactions_doc = {
     "description": (
         "Retrieve transactions for a given crypto and address. "
-        "If none provided, returns all transactions."
+        "Address-scoped reads return incoming/deposit invoice transactions "
+        "and unconfirmed deposit transactions; outgoing operational "
+        "transactions are excluded. If none provided, returns all transactions."
     ),
     "tags": ["Transactions"],
     "security": [{"API_Key": []}],

@@ -368,7 +368,7 @@
     "/api/v1/transactions/{crypto_name}/{addr}": {
       "get": {
         "summary": "Get transaction for SHKeeper generated cryptocurrency address",
-        "description": "Get all transactions related to specified cryptocurrency address",
+        "description": "Get incoming/deposit invoice transactions and unconfirmed deposit transactions for the specified cryptocurrency address. Outgoing operational transactions, such as wallet sweep transactions, are excluded from this address-scoped response.",
         "security": [
           {
             "API_Key": []

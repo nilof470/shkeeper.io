@@ -66,7 +66,7 @@ class ShkeeperDeployScriptsTestCase(unittest.TestCase):
         self.assertIn("1.7.28-nilof470.10", combined)
         self.assertIn("ghcr.io/nilof470/shkeeper.io:92263d0", deployment_doc)
         self.assertIn("ghcr.io/nilof470/ton-shkeeper:3691bb3", deployment_doc)
-        self.assertIn("ghcr.io/nilof470/ethereum-shkeeper:5ebee87", deployment_doc)
+        self.assertIn("ghcr.io/nilof470/ethereum-shkeeper:69511a3", deployment_doc)
         self.assertIn("shkeeper-to-sidecars-v1", deployment_doc)
         self.assertIn(
             "sha256:d0da1a8763f72c1e8f66a1755bc985d2c8414ac124c8335bfc71813fd29fc92e",
@@ -75,7 +75,7 @@ class ShkeeperDeployScriptsTestCase(unittest.TestCase):
         self.assertNotIn("1.7.28-nilof470.8", combined)
         self.assertNotIn("ghcr.io/nilof470/shkeeper.io:aa8cb3e", deployment_doc)
         self.assertNotIn("sha256:886d87b990c2756f0e9da3a63f54941bea28ae31fb4be2556558ad743854a5ea", deployment_doc)
-        self.assertNotIn("/root/shkeeper-current-values.yaml", deployment_doc)
+        self.assertIn("/root/shkeeper-current-values.yaml", deployment_doc)
         self.assertNotIn("payout-secret-guard.py", combined)
 
     def test_removed_post_renderer_scripts_are_not_part_of_deploy_path(self):

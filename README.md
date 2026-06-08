@@ -536,6 +536,7 @@ curl --location --request GET 'https://demo.shkeeper.io/api/v1/ETH-USDC/addresse
 **Endpoint:** `/api/v1/transactions/<crypto_name>/<addr>`
 **Authorization:** ApiKey.
 **HTTP request method:** GET
+Returns incoming/deposit invoice transactions and unconfirmed deposit transactions for the requested crypto/address pair. Outgoing operational transactions, such as wallet sweep transactions, are excluded from this address-scoped response.
 **Curl Example:**
 ```
 curl --location --request GET 'https://demo.shkeeper.io/api/v1/transactions/ETH/0xDCA83F12D963c7233E939a32e31aD758C7cCF307' \

@@ -831,7 +831,11 @@ def list_transactions(crypto, addr):
                 Transaction.query.join(Invoice)
                 .join(InvoiceAddress, isouter=True)
                 .filter(Transaction.crypto == crypto)
-                .filter((Invoice.addr == addr) | (InvoiceAddress.addr == addr))
+                .filter(Invoice.status != InvoiceStatus.OUTGOING)
+                .filter(
+                    ((Invoice.addr == addr) & (Invoice.crypto == crypto))
+                    | ((InvoiceAddress.addr == addr) & (InvoiceAddress.crypto == crypto))
+                )
             )
             transactions = (
                 *confirmed,
