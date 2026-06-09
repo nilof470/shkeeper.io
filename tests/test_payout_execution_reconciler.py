@@ -2,6 +2,7 @@ from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 import json
 import unittest
+from unittest.mock import patch
 
 from flask import Flask
 
@@ -38,6 +39,8 @@ class FakeSidecarClient:
             "sidecar_state_version": 1,
             "sidecar_state_transition_id": "sidecar-transition-1",
             "state_updated_at": "2026-06-03T10:00:00Z",
+            "txids": [],
+            "message_hashes": [],
         }
         self.status_response = {
             "status": "OK",
@@ -46,10 +49,14 @@ class FakeSidecarClient:
             "sidecar_state_version": 1,
             "sidecar_state_transition_id": "sidecar-transition-1",
             "state_updated_at": "2026-06-03T10:00:00Z",
+            "txids": [],
+            "message_hashes": [],
         }
+        self.recover_orphan_response = dict(self.status_response)
         self.raise_on_submit = None
         self.raise_on_status = None
         self.raise_on_preflight = None
+        self.raise_on_recover_orphan = None
 
     def preflight(self, execution):
         self.calls.append(("preflight", execution.id, execution.state.name))
@@ -70,6 +77,12 @@ class FakeSidecarClient:
         if self.raise_on_status:
             raise self.raise_on_status
         return self._with_execution_identity(execution, self.status_response)
+
+    def recover_orphan(self, execution):
+        self.calls.append(("recover_orphan", execution.id, execution.state.name))
+        if self.raise_on_recover_orphan:
+            raise self.raise_on_recover_orphan
+        return self._with_execution_identity(execution, self.recover_orphan_response)
 
     @staticmethod
     def assert_execution_committed(execution_id):
@@ -174,6 +187,10 @@ class PayoutExecutionReconcilerTestCase(unittest.TestCase):
         }
         payload.update(overrides)
         return payload
+
+    def seconds_until_next_dispatch(self, execution):
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        return (execution.next_dispatch_at - now).total_seconds()
 
     def test_created_execution_is_dispatched_after_durable_commit(self):
         execution = self.create_execution()
@@ -282,6 +299,267 @@ class PayoutExecutionReconcilerTestCase(unittest.TestCase):
         self.assertFalse(execution.reconciliation_required)
         self.assertEqual(execution.error_code, "PAYOUT_DISPATCH_EXCEPTION")
         self.assertIsNotNone(execution.next_dispatch_at)
+        self.assertLessEqual(self.seconds_until_next_dispatch(execution), 305)
+        self.assertGreaterEqual(self.seconds_until_next_dispatch(execution), 250)
+
+    def test_enqueued_status_unavailable_uses_polling_cap_after_many_attempts(self):
+        execution = self.create_execution()
+        client = FakeSidecarClient()
+        PayoutExecutionReconciler.dispatch_ready(client=client)
+        db.session.refresh(execution)
+        execution.dispatch_attempts = 469
+        execution.next_dispatch_at = None
+        db.session.commit()
+
+        client.raise_on_status = SidecarStatusUnavailable("status timeout")
+        count = PayoutExecutionReconciler.dispatch_ready(client=client)
+
+        db.session.refresh(execution)
+        self.assertEqual(count, 1)
+        self.assertEqual(execution.state, PayoutExecutionState.ENQUEUED)
+        self.assertFalse(execution.reconciliation_required)
+        self.assertEqual(execution.error_code, "PAYOUT_DISPATCH_EXCEPTION")
+        self.assertIsNotNone(execution.next_dispatch_at)
+        self.assertLessEqual(self.seconds_until_next_dispatch(execution), 305)
+        self.assertGreaterEqual(self.seconds_until_next_dispatch(execution), 250)
+
+    def test_broadcast_status_unavailable_uses_polling_cap_after_many_attempts(self):
+        execution = self.create_execution()
+        client = FakeSidecarClient()
+        PayoutExecutionReconciler.dispatch_ready(client=client)
+        db.session.refresh(execution)
+        client.status_response = {
+            "status": "OK",
+            "sidecar_execution_id": "sidecar-1",
+            "sidecar_state": "BROADCASTED",
+            "sidecar_state_version": 2,
+            "sidecar_state_transition_id": "sidecar-transition-2",
+            "state_updated_at": "2026-06-03T10:01:00Z",
+            "txids": ["tx-2"],
+        }
+        PayoutExecutionReconciler.dispatch_ready(client=client)
+        db.session.refresh(execution)
+        self.assertEqual(execution.state, PayoutExecutionState.BROADCAST)
+        execution.dispatch_attempts = 469
+        execution.next_dispatch_at = None
+        db.session.commit()
+
+        client.raise_on_status = SidecarStatusUnavailable("status timeout")
+        count = PayoutExecutionReconciler.dispatch_ready(client=client)
+
+        db.session.refresh(execution)
+        self.assertEqual(count, 1)
+        self.assertEqual(execution.state, PayoutExecutionState.BROADCAST)
+        self.assertFalse(execution.reconciliation_required)
+        self.assertEqual(execution.error_code, "PAYOUT_DISPATCH_EXCEPTION")
+        self.assertIsNotNone(execution.next_dispatch_at)
+        self.assertLessEqual(self.seconds_until_next_dispatch(execution), 305)
+        self.assertGreaterEqual(self.seconds_until_next_dispatch(execution), 250)
+
+    def test_old_received_sidecar_status_triggers_orphan_recovery(self):
+        execution = self.create_execution()
+        client = FakeSidecarClient()
+        PayoutExecutionReconciler.dispatch_ready(client=client)
+        db.session.refresh(execution)
+        self.assertEqual(execution.state, PayoutExecutionState.ENQUEUED)
+        client.calls = []
+        old_received = {
+            "status": "OK",
+            "sidecar_execution_id": "sidecar-1",
+            "sidecar_state": "RECEIVED",
+            "sidecar_state_version": 1,
+            "sidecar_state_transition_id": "sidecar-transition-1",
+            "state_updated_at": "2026-06-03T10:00:00Z",
+            "txids": [],
+            "message_hashes": [],
+        }
+        client.status_response = old_received
+        client.recover_orphan_response = {
+            **old_received,
+            "orphan_recovery": {
+                "attempted": True,
+                "enqueued": True,
+                "reason": "enqueued",
+            },
+        }
+
+        count = PayoutExecutionReconciler.dispatch_ready(client=client)
+
+        db.session.refresh(execution)
+        self.assertEqual(count, 1)
+        self.assertEqual(
+            [call[0] for call in client.calls],
+            ["status", "recover_orphan"],
+        )
+        self.assertEqual(execution.state, PayoutExecutionState.ENQUEUED)
+        self.assertFalse(execution.reconciliation_required)
+
+    def test_received_sidecar_status_with_message_hashes_does_not_recover_orphan(self):
+        execution = self.create_execution()
+        client = FakeSidecarClient()
+        PayoutExecutionReconciler.dispatch_ready(client=client)
+        db.session.refresh(execution)
+        client.calls = []
+        client.status_response = {
+            "status": "OK",
+            "sidecar_execution_id": "sidecar-1",
+            "sidecar_state": "RECEIVED",
+            "sidecar_state_version": 2,
+            "sidecar_state_transition_id": "sidecar-transition-2",
+            "state_updated_at": "2026-06-03T10:00:00Z",
+            "txids": [],
+            "message_hashes": ["message-hash-present"],
+        }
+
+        PayoutExecutionReconciler.dispatch_ready(client=client)
+
+        self.assertEqual([call[0] for call in client.calls], ["status"])
+
+    def test_received_sidecar_status_with_txids_does_not_recover_orphan(self):
+        execution = self.create_execution()
+        client = FakeSidecarClient()
+        PayoutExecutionReconciler.dispatch_ready(client=client)
+        db.session.refresh(execution)
+        client.calls = []
+        client.status_response = {
+            "status": "OK",
+            "sidecar_execution_id": "sidecar-1",
+            "sidecar_state": "RECEIVED",
+            "sidecar_state_version": 2,
+            "sidecar_state_transition_id": "sidecar-transition-2",
+            "state_updated_at": "2026-06-03T10:00:00Z",
+            "txids": ["tx-hash-present"],
+            "message_hashes": [],
+        }
+
+        PayoutExecutionReconciler.dispatch_ready(client=client)
+
+        self.assertEqual([call[0] for call in client.calls], ["status"])
+
+    def test_unsafe_sidecar_evidence_detects_normalized_and_zero_value_fields(self):
+        unsafe_fields = (
+            ("nonce_or_seqno", 0),
+            ("signed_payload_storage_ref", "not-retained:signed-payload"),
+            ("signed_payload_hash", "signed-payload-hash"),
+            ("txid_or_message_hash", "provider-hash"),
+            ("nonce", 0),
+            ("source_seqno", 0),
+        )
+        for field, value in unsafe_fields:
+            with self.subTest(field=field):
+                self.assertTrue(
+                    PayoutExecutionReconciler._has_unsafe_sidecar_evidence(
+                        {
+                            "txids": [],
+                            "message_hashes": [],
+                            field: value,
+                        }
+                    )
+                )
+
+    def test_received_sidecar_status_with_normalized_nonce_does_not_recover_orphan(self):
+        execution = self.create_execution("WD-normalized-nonce")
+        client = FakeSidecarClient()
+        PayoutExecutionReconciler.dispatch_ready(client=client)
+        db.session.refresh(execution)
+        client.calls = []
+        client.status_response = {
+            "status": "OK",
+            "sidecar_execution_id": "sidecar-1",
+            "sidecar_state": "RECEIVED",
+            "sidecar_state_version": 2,
+            "sidecar_state_transition_id": "sidecar-transition-normalized-nonce",
+            "state_updated_at": "2026-06-03T10:00:00Z",
+            "txids": [],
+            "message_hashes": [],
+            "nonce_or_seqno": 0,
+        }
+
+        PayoutExecutionReconciler.dispatch_ready(client=client)
+
+        self.assertEqual([call[0] for call in client.calls], ["status"])
+
+    def test_fresh_received_sidecar_status_does_not_recover_orphan(self):
+        execution = self.create_execution()
+        client = FakeSidecarClient()
+        PayoutExecutionReconciler.dispatch_ready(client=client)
+        db.session.refresh(execution)
+        client.calls = []
+        client.status_response = {
+            "status": "OK",
+            "sidecar_execution_id": "sidecar-1",
+            "sidecar_state": "RECEIVED",
+            "sidecar_state_version": 1,
+            "sidecar_state_transition_id": "sidecar-transition-1",
+            "state_updated_at": datetime.now(timezone.utc).isoformat(),
+            "txids": [],
+            "message_hashes": [],
+        }
+
+        PayoutExecutionReconciler.dispatch_ready(client=client)
+
+        self.assertEqual([call[0] for call in client.calls], ["status"])
+
+    def test_orphan_recovery_min_age_config_is_honored(self):
+        self.app.config["PAYOUT_EXECUTION_ORPHAN_RECOVERY_MIN_AGE_SEC"] = 3600
+        execution = self.create_execution()
+        client = FakeSidecarClient()
+        PayoutExecutionReconciler.dispatch_ready(client=client)
+        db.session.refresh(execution)
+        client.calls = []
+        client.status_response = {
+            "status": "OK",
+            "sidecar_execution_id": "sidecar-1",
+            "sidecar_state": "RECEIVED",
+            "sidecar_state_version": 1,
+            "sidecar_state_transition_id": "sidecar-transition-1",
+            "state_updated_at": "2026-06-03T10:00:00Z",
+            "txids": [],
+            "message_hashes": [],
+        }
+
+        with patch.object(
+            PayoutExecutionReconciler,
+            "_utcnow",
+            return_value=datetime(2026, 6, 3, 10, 30, 0),
+        ):
+            PayoutExecutionReconciler.dispatch_ready(client=client)
+
+        self.assertEqual([call[0] for call in client.calls], ["status"])
+
+    def test_orphan_recovery_failure_keeps_enqueued_with_polling_cap(self):
+        execution = self.create_execution()
+        client = FakeSidecarClient()
+        PayoutExecutionReconciler.dispatch_ready(client=client)
+        db.session.refresh(execution)
+        execution.dispatch_attempts = 469
+        execution.next_dispatch_at = None
+        db.session.commit()
+        client.calls = []
+        client.status_response = {
+            "status": "OK",
+            "sidecar_execution_id": "sidecar-1",
+            "sidecar_state": "RECEIVED",
+            "sidecar_state_version": 1,
+            "sidecar_state_transition_id": "sidecar-transition-1",
+            "state_updated_at": "2026-06-03T10:00:00Z",
+            "txids": [],
+            "message_hashes": [],
+        }
+        client.raise_on_recover_orphan = SidecarStatusUnavailable("recover timeout")
+
+        count = PayoutExecutionReconciler.dispatch_ready(client=client)
+
+        db.session.refresh(execution)
+        self.assertEqual(count, 1)
+        self.assertEqual(
+            [call[0] for call in client.calls],
+            ["status", "recover_orphan"],
+        )
+        self.assertEqual(execution.state, PayoutExecutionState.ENQUEUED)
+        self.assertFalse(execution.reconciliation_required)
+        self.assertEqual(execution.error_code, "PAYOUT_DISPATCH_EXCEPTION")
+        self.assertLessEqual(self.seconds_until_next_dispatch(execution), 305)
 
     def test_successful_sidecar_progress_clears_previous_transient_error(self):
         execution = self.create_execution()

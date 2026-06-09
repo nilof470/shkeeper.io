@@ -4,6 +4,7 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from flask import current_app
 from sqlalchemy import or_
 
 from shkeeper import db
@@ -31,6 +32,8 @@ class PayoutExecutionReconciler:
         PayoutExecutionState.ENQUEUED,
         PayoutExecutionState.BROADCAST,
     )
+    ACTIVE_POLL_STATUS_RETRY_DELAY_SECONDS = 300
+    ORPHAN_RECOVERY_SIDECAR_STATES = ("RECEIVED", "VALIDATED")
 
     @classmethod
     def _utcnow(cls):
@@ -335,9 +338,52 @@ class PayoutExecutionReconciler:
         return PayoutExecutionService.apply_sidecar_status(execution, response)
 
     @classmethod
+    def _has_unsafe_sidecar_evidence(cls, status):
+        evidence_fields = (
+            "source_seqno",
+            "nonce",
+            "nonce_or_seqno",
+            "signed_boc_ref",
+            "signed_boc_hash",
+            "signed_raw_tx_ref",
+            "signed_raw_tx_hash",
+            "signed_payload_storage_ref",
+            "signed_payload_hash",
+            "message_hash",
+            "tx_hash",
+            "txid_or_message_hash",
+            "broadcast_attempted_at",
+        )
+        if any(status.get(field) is not None for field in evidence_fields):
+            return True
+        return bool(status.get("txids")) or bool(status.get("message_hashes"))
+
+    @classmethod
+    def _should_recover_orphan(cls, execution, status):
+        if execution.state != PayoutExecutionState.ENQUEUED:
+            return False
+        sidecar_state = status.get("sidecar_state") or status.get("state")
+        if sidecar_state not in cls.ORPHAN_RECOVERY_SIDECAR_STATES:
+            return False
+        if cls._has_unsafe_sidecar_evidence(status):
+            return False
+        sidecar_updated_at = PayoutExecutionService._parse_sidecar_datetime(
+            status.get("sidecar_state_updated_at") or status.get("state_updated_at")
+        )
+        if sidecar_updated_at is None:
+            return False
+        age_seconds = (cls._utcnow() - sidecar_updated_at).total_seconds()
+        min_age = int(
+            current_app.config.get("PAYOUT_EXECUTION_ORPHAN_RECOVERY_MIN_AGE_SEC", 300)
+        )
+        return age_seconds >= min_age
+
+    @classmethod
     def _poll_sidecar_status(cls, execution, client):
         try:
             response = client.status(execution)
+            if cls._should_recover_orphan(execution, response):
+                response = client.recover_orphan(execution)
         except SidecarExecutionNotFound:
             return PayoutExecutionService.transition(
                 execution,
@@ -347,6 +393,15 @@ class PayoutExecutionReconciler:
                 error_message="Sidecar lost an accepted payout execution",
                 reconciliation_required=True,
             )
+        except SidecarStatusUnavailable as exc:
+            execution.error_code = "PAYOUT_DISPATCH_EXCEPTION"
+            execution.error_message = str(exc)
+            execution.next_dispatch_at = cls._utcnow() + timedelta(
+                seconds=cls.ACTIVE_POLL_STATUS_RETRY_DELAY_SECONDS
+            )
+            db.session.add(execution)
+            db.session.commit()
+            return execution
         return PayoutExecutionService.apply_sidecar_status(execution, response)
 
     @staticmethod

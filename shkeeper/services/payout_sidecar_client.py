@@ -273,3 +273,33 @@ class HttpPayoutSidecarClient:
                 f"Sidecar status endpoint returned HTTP {response.status_code}"
             )
         return payload
+
+    def recover_orphan(self, execution):
+        suffix = f"/payout-executions/{execution.id}/recover-orphan"
+        path = f"/{execution.sidecar_symbol}{suffix}"
+        body = self._compact_body({})
+        try:
+            response = requests.post(
+                self._url(execution, suffix),
+                auth=self._auth(execution),
+                data=body,
+                headers=self._signed_headers(execution, "POST", path, body),
+                timeout=self._timeout(),
+            )
+        except requests.exceptions.Timeout as exc:
+            raise SidecarStatusUnavailable(str(exc)) from exc
+        except requests.exceptions.RequestException as exc:
+            raise SidecarStatusUnavailable(str(exc)) from exc
+        payload = self._json(response, "recover_orphan")
+        if response.status_code == 404 and payload.get("code") in (
+            "NOT_FOUND",
+            "NO_EXECUTION_CREATED",
+        ):
+            raise SidecarExecutionNotFound(payload.get("code"))
+        if response.status_code >= 400:
+            raise SidecarStatusUnavailable(
+                f"Sidecar orphan recovery endpoint returned HTTP {response.status_code}",
+                status_code=response.status_code,
+                payload=payload,
+            )
+        return payload

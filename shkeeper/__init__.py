@@ -153,6 +153,9 @@ def create_app(test_config=None):
             "PAYOUT_EXECUTION_RECONCILER_ONCE",
             False,
         ),
+        PAYOUT_EXECUTION_ORPHAN_RECOVERY_MIN_AGE_SEC=int(
+            os.environ.get("PAYOUT_EXECUTION_ORPHAN_RECOVERY_MIN_AGE_SEC", "300")
+        ),
         PAYOUT_CALLBACK_DISPATCHER_INTERVAL=int(
             os.environ.get("PAYOUT_CALLBACK_DISPATCHER_INTERVAL", "5")
         ),
