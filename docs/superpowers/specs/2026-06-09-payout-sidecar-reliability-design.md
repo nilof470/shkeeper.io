@@ -150,7 +150,8 @@ All sidecars should satisfy the same payout execution contract:
 5. Failures after unsafe side effects must move through reconciliation or
    explicit recovery, not normal retry.
 6. Stale `RECEIVED` or `VALIDATED` executions with no side-effect evidence are
-   safe to re-enqueue.
+   not just safe to re-enqueue. They must have an explicit durable recovery
+   path through an authenticated mutating recovery operation.
 7. Stale `SIGNING`, `SIGNED`, or `BROADCASTING` executions require recovery
    logic based on the specific sidecar's evidence fields.
 
@@ -171,11 +172,10 @@ Behavior:
   it for reconciliation/recovery based on the side-effect evidence;
 - always `db.session.remove()` in `finally`.
 
-Transient DB exceptions include:
-
-- `sqlalchemy.exc.OperationalError`
-- `sqlalchemy.exc.DBAPIError`
-- `sqlalchemy.exc.PendingRollbackError`
+Transient DB errors are OperationalError, PendingRollbackError, or DBAPIError
+with connection_invalidated=True. Integrity, data, programming, and constraint
+errors are not transient payout-worker failures and must not enter the automatic
+retry path.
 
 The retry must stay narrow. It should not catch broad `Exception`, chain API
 errors, signing errors, broadcast errors, or business `PayoutExecutionError`.
@@ -253,7 +253,35 @@ test only if current coverage does not prove:
   retryable;
 - failures after signed tx or txid evidence do not re-enter normal retry.
 
-### 5. SHKeeper Core Poll Backoff
+### 5. Durable Sidecar Orphan Recovery
+
+Bounded Celery retry is not sufficient by itself. A worker can die, the broker
+task can disappear, or all retries can exhaust while the sidecar row is still in
+`RECEIVED` or `VALIDATED` with no unsafe evidence.
+
+These stale no-evidence rows are not just safe to re-enqueue; the final
+reliability contract requires a durable recovery path so lost broker or worker
+state cannot leave the execution orphaned forever.
+
+Add an explicit authenticated sidecar endpoint:
+
+```text
+POST /payout-executions/{id}/recover-orphan
+```
+
+This endpoint may enqueue work only when all are true:
+
+- the authenticated consumer owns the execution;
+- sidecar state is `RECEIVED` or `VALIDATED`;
+- there is no unsafe evidence: nonce/seqno, signed payload ref/hash,
+  tx/message hash, tx/message hash list, or broadcast-attempt marker;
+- there is no active unexpired worker lease.
+
+`GET /payout-executions/{id}` must not enqueue orphan work. Existing status
+refresh behavior may remain, but broker/task recovery must be reachable only
+through the explicit mutating endpoint.
+
+### 6. SHKeeper Core Poll Backoff and Orphan Trigger
 
 Core SHKeeper currently leaves active `ENQUEUED`/`BROADCAST` polling subject to
 the same exponential delay path that can grow to one hour after repeated
@@ -274,7 +302,15 @@ Change polling behavior:
 Do not move active polling failures to reconciliation unless the sidecar returns
 identity mismatch, execution not found, or contradictory evidence.
 
-### 6. Grither Pay Provider-Confirmed Recovery
+For `ENQUEUED` executions, after a successful status read, SHKeeper core may call
+`POST /payout-executions/{id}/recover-orphan` only when the sidecar status is
+old `RECEIVED` or `VALIDATED` and contains no tx, message, or broadcast
+evidence. `ENQUEUEING` submit ambiguity remains conservative and must not use
+this orphan path. Failures after nonce/seqno, signed payload, message/tx hash,
+or broadcast marker still require reconciliation/recovery and must not call
+orphan re-enqueue.
+
+### 7. Grither Pay Provider-Confirmed Recovery
 
 Grither Pay should not reject a matching newer `CONFIRMED` provider observation
 only because local state is `RECONCILIATION_REQUIRED` / `MANUAL_REVIEW`.
@@ -296,6 +332,12 @@ Allow applying incoming `CONFIRMED` when all are true:
 When allowed, apply the normal `CONFIRMED` path and complete the wallet
 withdrawal. This is provider recovery, not manual operator completion.
 
+Before any provider observation can overwrite stored execution fields, Grither
+must enforce a global `sidecar_payload_hash` safety check. Together,
+`request_hash + sidecar_payload_hash` is the canonical binding for amount and
+destination unless Grither adds first-class amount/destination fields to
+`ShKeeperPayoutObservation`.
+
 This recovery is for future newer callbacks. Rows that have already been marked
 `TERMINAL_STATE_CONFLICT` at the same event version, such as the production
 `68304109` incident, should remain admin/manual recovery unless a separate,
@@ -310,11 +352,12 @@ Keep `TERMINAL_STATE_CONFLICT` for:
   execution identity;
 - confirmed observations without tx/message evidence.
 
-### 7. TON Message Hash Handling
+### 8. TON Message Hash Handling
 
 TON may provide message hashes without separate transaction ids. Admin and
 manual resolution paths should treat TON message hash as valid provider
-evidence.
+evidence. Automatic callback application must also treat `message_hashes` as
+provider evidence for TON payouts.
 
 Recommended UI/API behavior:
 
@@ -322,7 +365,10 @@ Recommended UI/API behavior:
 - permit message hash without txid;
 - if a required `txHash` field still exists in the UI, auto-fill it from
   `messageHash` only for TON and mark it as a provider reference, not a distinct
-  chain txid.
+  chain txid;
+- wallet completion must receive `firstProviderHash(txids, message_hashes)`,
+  so TON callbacks with empty `txids` still populate the wallet `txHash` field
+  with the message hash.
 
 ## Operational Behavior After Fix
 
@@ -411,15 +457,19 @@ evidence.
 
 - callback apply test: `MANUAL_REVIEW` + matching newer `CONFIRMED` with
   message hash completes wallet withdrawal;
+- wallet completion test: TON callback with empty `txids` and non-empty
+  `message_hashes` populates wallet `txHash` from `message_hashes`;
 - conflict test: mismatched request hash still produces `TERMINAL_STATE_CONFLICT`;
 - conflict test: manually completed or refunded withdrawal still rejects later
   provider callback.
 
 ## Rollout Plan
 
-1. Deploy TON/ETH sidecar task/session guard and tests.
-2. Deploy SHKeeper core poll backoff cap.
-3. Deploy Grither provider-confirmed recovery rule.
+1. Deploy TON/ETH sidecar task/session guard, orphan-recovery endpoints, and tests.
+2. Deploy SHKeeper core poll backoff cap and orphan-recovery trigger after the
+   sidecar endpoints exist.
+3. Deploy Grither provider-confirmed recovery rule and TON message-hash wallet
+   evidence handling.
 4. Verify with a controlled small TON-USDT payout and one ETH-USDT dry-run or
    staging payout.
 5. Watch stuck payout metrics, sidecar worker logs, callback delivery results,
