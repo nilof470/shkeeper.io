@@ -273,6 +273,9 @@ This endpoint may enqueue work only when all are true:
 
 - the authenticated consumer owns the execution;
 - sidecar state is `RECEIVED` or `VALIDATED`;
+- sidecar `state_updated_at`, or equivalent sidecar status timestamp, is older
+  than a configured orphan recovery threshold whose default is longer than
+  normal enqueue-to-worker latency;
 - there is no unsafe evidence: nonce/seqno, signed payload ref/hash,
   tx/message hash, tx/message hash list, or broadcast-attempt marker;
 - there is no active unexpired worker lease.
@@ -309,6 +312,9 @@ evidence. `ENQUEUEING` submit ambiguity remains conservative and must not use
 this orphan path. Failures after nonce/seqno, signed payload, message/tx hash,
 or broadcast marker still require reconciliation/recovery and must not call
 orphan re-enqueue.
+
+Here, old means the sidecar `state_updated_at`, or equivalent sidecar status
+timestamp, is older than the configured orphan recovery threshold.
 
 ### 7. Grither Pay Provider-Confirmed Recovery
 
@@ -408,8 +414,8 @@ errors.
 
 Risk: a task still disappears due worker crash or broker behavior.
 
-Mitigation: existing metrics plus stuck execution alerts; safe re-enqueue only
-for states without unsafe evidence.
+Mitigation: existing metrics and stuck execution alerts plus the durable
+authenticated `recover-orphan` endpoint for old no-evidence states.
 
 ### Over-Unifying Sidecars
 
@@ -446,10 +452,21 @@ evidence.
 - add contract regression only if current retryable pre-broadcast tests do not
   cover lost task/no-side-effect behavior.
 
+### Sidecar Orphan Recovery
+
+- `POST /payout-executions/{id}/recover-orphan` enqueues only old no-evidence
+  `RECEIVED` or `VALIDATED` executions;
+- unsafe evidence blocks recovery;
+- active unexpired worker lease blocks recovery;
+- `GET /payout-executions/{id}` never enqueues orphan work.
+
 ### SHKeeper Core
 
 - reconciler test for active `ENQUEUED` status unavailable using capped retry
   delay;
+- core calls `POST /payout-executions/{id}/recover-orphan` only from
+  `ENQUEUED`;
+- `ENQUEUEING` does not use the orphan recovery path;
 - existing test that later sidecar progress clears previous transient error;
 - payout metrics tests for stuck execution visibility.
 
@@ -459,6 +476,8 @@ evidence.
   message hash completes wallet withdrawal;
 - wallet completion test: TON callback with empty `txids` and non-empty
   `message_hashes` populates wallet `txHash` from `message_hashes`;
+- conflict test: `sidecar_payload_hash` mismatch rejects both normal provider
+  overwrite and the manual-review/provider-confirmed recovery path;
 - conflict test: mismatched request hash still produces `TERMINAL_STATE_CONFLICT`;
 - conflict test: manually completed or refunded withdrawal still rejects later
   provider callback.
