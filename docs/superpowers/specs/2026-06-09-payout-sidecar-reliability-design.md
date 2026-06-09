@@ -166,8 +166,9 @@ Behavior:
 - best-effort `db.session.rollback()` at task start to clear inherited poisoned
   transaction state;
 - run `PayoutExecutionStore.execute()`;
-- on transient SQLAlchemy DB failures, rollback/remove the session and retry the
-  Celery task with bounded backoff;
+- on transient SQLAlchemy DB failures, rollback/remove the session, inspect the
+  payout row, and then either retry, release the row back to `RECEIVED`, or leave
+  it for reconciliation/recovery based on the side-effect evidence;
 - always `db.session.remove()` in `finally`.
 
 Transient DB exceptions include:
@@ -178,6 +179,19 @@ Transient DB exceptions include:
 
 The retry must stay narrow. It should not catch broad `Exception`, chain API
 errors, signing errors, broadcast errors, or business `PayoutExecutionError`.
+It also must not blindly retry every transient DB error after the store has
+entered `SIGNING`. After rollback, the task should reload the row and apply this
+decision table:
+
+| Current row state | Unsafe evidence | Action |
+| --- | --- | --- |
+| `RECEIVED` or `VALIDATED` | none | Celery retry with bounded backoff |
+| `SIGNING` owned by this task attempt | none | clear lease/attempt and move back to `RECEIVED`, then retry or allow normal auto-enqueue |
+| `SIGNING`, `SIGNED`, or `BROADCASTING` | present or ownership is ambiguous | no blind retry; use stale recovery or reconciliation |
+| terminal state | any | no retry |
+
+This avoids the common bad implementation where the retry wrapper surrounds the
+whole store call and immediately reruns after a partial state transition.
 
 Recommended retry parameters:
 
@@ -218,6 +232,8 @@ Required tests:
 - poisoned session is cleaned before the next task attempt;
 - transient DB error before unsafe evidence does not create
   `FAILED_PRE_BROADCAST`;
+- transient DB error after moving to `SIGNING` but before nonce/seqno evidence
+  clears the task-owned lease and makes the execution retryable;
 - exception after `source_seqno`/`nonce` or signed evidence does not trigger
   blind retry;
 - normal successful payout path still broadcasts once.
@@ -249,6 +265,9 @@ Change polling behavior:
 - for `ENQUEUED` and `BROADCAST`, `SidecarStatusUnavailable` should keep the
   state unchanged and retry with a short capped delay;
 - cap active poll retry delay at 300 seconds;
+- implement the cap in the polling path, not by globally changing all dispatch
+  error backoff; preflight, submit, and enqueue-recovery errors keep their
+  existing ambiguity semantics unless explicitly changed;
 - keep `PAYOUT_DISPATCH_EXCEPTION` diagnostic fields for visibility;
 - clear the transient diagnostic fields when later sidecar progress is applied.
 
@@ -276,6 +295,12 @@ Allow applying incoming `CONFIRMED` when all are true:
 
 When allowed, apply the normal `CONFIRMED` path and complete the wallet
 withdrawal. This is provider recovery, not manual operator completion.
+
+This recovery is for future newer callbacks. Rows that have already been marked
+`TERMINAL_STATE_CONFLICT` at the same event version, such as the production
+`68304109` incident, should remain admin/manual recovery unless a separate,
+explicit reprocess-from-raw-callback tool is designed. Do not silently replay
+same-version raw callback rows through the normal webhook path.
 
 Keep `TERMINAL_STATE_CONFLICT` for:
 
