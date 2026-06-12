@@ -168,7 +168,7 @@ Decision precedence for guarded deposits:
    valid manual resolution, return `allow`. Small-amount `SKIPPED` deposits are
    non-guarded allow-cases in this release.
 
-The effective risk threshold is `0.70` in the intended deployment. SHKeeper's
+The effective risk threshold is `0.30` in the intended deployment. SHKeeper's
 `AML_MAX_ACCEPT_SCORE` is the AML decision source; `aml-shkeeper`
 `AML_DEFAULT_THRESHOLD` is only a provider-side fallback for checks where
 SHKeeper did not send a threshold.
@@ -724,7 +724,7 @@ Ethereum sidecar:
    reject it in Grither Pay admin with refund evidence, verify SHKeeper refund
    resolution audit, later `sweep-eligibility=allow`, and sidecar sweep of any
    remaining clean/legacy balance.
-11. Keep `AML_MAX_ACCEPT_SCORE` and `AML_DEFAULT_THRESHOLD` aligned at `0.70` for
+11. Keep `AML_MAX_ACCEPT_SCORE` and `AML_DEFAULT_THRESHOLD` aligned at `0.30` for
    the target deployment.
 
 ## Open Future Work

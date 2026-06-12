@@ -359,7 +359,7 @@ perl -0pi -e 's|(^ton_shkeeper:\n(?:  .*\n)*?  image:\s*).*$|${1}ghcr.io/nilof47
   /root/shkeeper-values.yaml /root/shkeeper-payout-values.yaml
 perl -0pi -e 's|(^ethereum_shkeeper:\n(?:  .*\n)*?  image:\s*).*$|${1}ghcr.io/nilof470/ethereum-shkeeper:5192515|m' \
   /root/shkeeper-values.yaml /root/shkeeper-payout-values.yaml
-perl -0pi -e 's|(^    AML_MAX_ACCEPT_SCORE:\s*).*$|${1}"0.70"|m; s|(^    AML_DEFAULT_THRESHOLD:\s*).*$|${1}"0.70"|m' \
+perl -0pi -e 's|(^    AML_MAX_ACCEPT_SCORE:\s*).*$|${1}"0.30"|m; s|(^    AML_DEFAULT_THRESHOLD:\s*).*$|${1}"0.30"|m' \
   /root/shkeeper-values.yaml /root/shkeeper-payout-values.yaml
 
 grep -nE 'ghcr.io/nilof470/(shkeeper.io|aml-shkeeper|tron-shkeeper|ton-shkeeper|ethereum-shkeeper):|AML_(MAX_ACCEPT_SCORE|DEFAULT_THRESHOLD)' \
@@ -835,7 +835,7 @@ shkeeper:
     AML_SHKEEPER_HOST: http://aml-shkeeper:6000
     AML_SHKEEPER_USERNAME: "REPLACE_WITH_INTERNAL_AML_USERNAME"
     AML_SHKEEPER_PASSWORD: "REPLACE_WITH_INTERNAL_AML_PASSWORD"
-    AML_MAX_ACCEPT_SCORE: "0.70"
+    AML_MAX_ACCEPT_SCORE: "0.30"
     AML_MIN_CHECK_AMOUNT_FIAT: "100"
     AML_SKIP_CUMULATIVE_LIMIT_FIAT: "300"
     AML_SKIP_CUMULATIVE_WINDOW_HOURS: "24"
@@ -853,7 +853,7 @@ aml_shkeeper:
     KOINKYT_HOST: https://explorer.coinkyt.com/openapi/v1
     KOINKYT_API_KEY: "REPLACE_WITH_KOINKYT_API_KEY"
     KOINKYT_RISK_PROFILE_IDS: ""
-    AML_DEFAULT_THRESHOLD: "0.70"
+    AML_DEFAULT_THRESHOLD: "0.30"
     CHECK_TIMEOUT_SECONDS: "1800"
     CHECK_RETRY_SECONDS: "120"
     RECHECK_TXS_EVERY_SECONDS: "120"
@@ -861,7 +861,7 @@ aml_shkeeper:
 ```
 
 `AML_MAX_ACCEPT_SCORE` in SHKeeper and `AML_DEFAULT_THRESHOLD` in
-`aml-shkeeper` should normally match. `0.70` is the AML-gated sweep policy value;
+`aml-shkeeper` should normally match. `0.30` is the AML-gated sweep policy value;
 raise it only with an explicit compliance decision.
 
 AML parameter reference:
@@ -873,7 +873,7 @@ AML parameter reference:
 | `AML_SHKEEPER_HOST` | `shkeeper` | `http://aml-shkeeper:6000` | Internal URL of the AML sidecar API. |
 | `AML_SHKEEPER_USERNAME` | `shkeeper` | `AML_USERNAME` or `shkeeper` | Basic Auth user for calls from SHKeeper to `aml-shkeeper`. |
 | `AML_SHKEEPER_PASSWORD` | `shkeeper` | `AML_PASSWORD` or `shkeeper` | Basic Auth password for calls from SHKeeper to `aml-shkeeper`. |
-| `AML_MAX_ACCEPT_SCORE` | `shkeeper` | `0.70` | Main accept threshold. A result with score `<=` this value is credited; higher score goes to manual review. |
+| `AML_MAX_ACCEPT_SCORE` | `shkeeper` | `0.30` | Main accept threshold. A result with score `<=` this value is credited; higher score goes to manual review. |
 | `AML_MIN_CHECK_AMOUNT_FIAT` | `shkeeper` | `100` | Deposits at or above this fiat value must be checked by AML. |
 | `AML_SKIP_CUMULATIVE_LIMIT_FIAT` | `shkeeper` | `300` | Maximum cumulative fiat amount that may skip AML within the skip window. |
 | `AML_SKIP_CUMULATIVE_WINDOW_HOURS` | `shkeeper` | `24` | Time window for the cumulative skip limit. |
@@ -883,7 +883,7 @@ AML parameter reference:
 | `AML_USERNAME` | `aml-shkeeper` | `shkeeper` | Basic Auth user exposed by the AML sidecar. Must match `AML_SHKEEPER_USERNAME`. |
 | `AML_PASSWORD` | `aml-shkeeper` | `shkeeper` | Basic Auth password exposed by the AML sidecar. Must match `AML_SHKEEPER_PASSWORD`. |
 | `CURRENT_PROVIDER` | `aml-shkeeper` | `koinkyt` | Provider used by the sidecar. Supported values in this fork: `koinkyt`, `amlbot`. |
-| `AML_DEFAULT_THRESHOLD` | `aml-shkeeper` | `0.70` | Stored on legacy checks, or on v1 checks only when SHKeeper does not send a threshold. Keep it aligned with `AML_MAX_ACCEPT_SCORE`. |
+| `AML_DEFAULT_THRESHOLD` | `aml-shkeeper` | `0.30` | Stored on legacy checks, or on v1 checks only when SHKeeper does not send a threshold. Keep it aligned with `AML_MAX_ACCEPT_SCORE`. |
 | `KOINKYT_API_KEY` | `aml-shkeeper` | empty | Required when `CURRENT_PROVIDER=koinkyt`. Sent as `X-API-Key`. |
 | `KOINKYT_HOST` | `aml-shkeeper` | `https://explorer.coinkyt.com/openapi/v1` | Koinkyt API base URL. |
 | `KOINKYT_RISK_PROFILE_IDS` | `aml-shkeeper` | empty | Optional comma- or semicolon-separated Koinkyt risk profile IDs. |
@@ -912,6 +912,131 @@ AML parameter reference:
   `SOLANA-USDC`, `SOLANA-PYUSD`.
 
 TON assets are not AML-supported by these provider maps in the current code.
+
+## Manual TRON USDT Refund From Fee Wallet
+
+Use this runbook only after a reviewed AML deposit was intentionally refunded
+or rejected and the funds are already on the TRON fee wallet. If the funds are
+still on the original one-time deposit address, refund from that source address
+first, then record the refund evidence in Grither Pay. Recording the refund
+decision before the on-chain refund allows SHKeeper to sweep the deposit into
+the fee wallet, so the refund must then be sent from the fee wallet.
+
+The script below sends USDT from the `fee_deposit` wallet through the same TRON
+resource preparation path used by payout execution. It does not use
+`src_address`, so it cannot send from the one-time deposit address by mistake.
+`DRY_RUN=1` is the default and does not rent resources or broadcast a
+transaction.
+
+Prepare the refund script inside the `tron-shkeeper` app container:
+
+```bash
+export APP_NS=shkeeper
+
+kubectl exec -i -n "$APP_NS" deployment/tron-shkeeper -c app -- \
+  tee /tmp/refund_usdt_from_fee_wallet.py >/dev/null <<'PY'
+import json
+import os
+from decimal import Decimal
+
+from app.wallet_encryption import wallet_encryption
+wallet_encryption.setup_encryption()
+
+from app.wallet import Wallet
+from app.payout_resources import (
+    ensure_fee_deposit_resources_for_usdt_payout,
+    estimate_fee_deposit_resources_for_usdt_payout,
+)
+from app.tasks import usdt_payout_resource_lock
+
+DEST = os.environ["REFUND_TO"].strip()
+AMOUNT = Decimal(os.environ["AMOUNT"])
+DRY_RUN = os.getenv("DRY_RUN", "1") != "0"
+
+if AMOUNT <= 0:
+    raise SystemExit("AMOUNT must be positive")
+
+w = Wallet("USDT")
+source = w.main_account["public"]
+source_balance = w.balance_of(source)
+dest_balance = w.balance_of(DEST)
+
+print(json.dumps({
+    "dry_run": DRY_RUN,
+    "source": source,
+    "dest": DEST,
+    "amount": str(AMOUNT),
+    "source_balance": str(source_balance),
+    "destination_balance_before": str(dest_balance),
+}, indent=2))
+
+if source_balance < AMOUNT:
+    raise SystemExit(f"Not enough fee wallet USDT: {source_balance} < {AMOUNT}")
+
+if DRY_RUN:
+    quote = estimate_fee_deposit_resources_for_usdt_payout(
+        DEST,
+        AMOUNT,
+        tron_client=w.client,
+    )
+    print(json.dumps(quote.to_dict(), indent=2))
+    print("DRY_RUN=1: not renting resources and not broadcasting")
+    raise SystemExit(0)
+
+with usdt_payout_resource_lock():
+    quote = ensure_fee_deposit_resources_for_usdt_payout(
+        DEST,
+        AMOUNT,
+        tron_client=w.client,
+        allow_destination_activation=False,
+    )
+    print(json.dumps(quote.to_dict(), indent=2))
+    result = w.transfer(DEST, AMOUNT)
+
+print(json.dumps(result, indent=2, default=str))
+
+if result.get("status") != "success":
+    raise SystemExit(f"Refund transfer failed: {result}")
+
+print("REFUND_TXID=" + result["txids"][0])
+PY
+```
+
+Check the balances before broadcasting:
+
+```bash
+export APP_NS=shkeeper
+export REFUND_TO=REPLACE_WITH_TRON_REFUND_ADDRESS
+export AMOUNT=REPLACE_WITH_USDT_AMOUNT
+
+kubectl exec -n "$APP_NS" deployment/tron-shkeeper -c app -- \
+  sh -lc "PYTHONPATH=/app REFUND_TO='$REFUND_TO' AMOUNT='$AMOUNT' DRY_RUN=1 python /tmp/refund_usdt_from_fee_wallet.py"
+```
+
+Broadcast the refund only after the dry run shows enough fee-wallet balance and
+a valid resource quote:
+
+```bash
+kubectl exec -n "$APP_NS" deployment/tron-shkeeper -c app -- \
+  sh -lc "PYTHONPATH=/app REFUND_TO='$REFUND_TO' AMOUNT='$AMOUNT' DRY_RUN=0 python /tmp/refund_usdt_from_fee_wallet.py"
+```
+
+The successful run prints `REFUND_TXID=...`. Copy that TXID into the Grither Pay
+manual-review audit record. If the refund decision was recorded in Grither Pay
+before the on-chain transaction was sent, verify that the recorded refund TXID,
+refund address, amount, and source address match the actual transaction. If they
+do not match, correct the audit evidence in Grither Pay and the corresponding
+SHKeeper sweep-resolution record before closing the incident.
+
+Useful checks while investigating a specific AML refund:
+
+```bash
+kubectl logs -n "$APP_NS" deployment/tron-shkeeper --since=2h | \
+  grep -Ei 'REPLACE_WITH_TXID_PREFIX|REPLACE_WITH_DEPOSIT_ADDRESS|manual_refund|sweep|success|error'
+
+kubectl logs -n "$APP_NS" deployment/shkeeper-deployment --since=2h | \
+  grep -Ei 'REPLACE_WITH_TXID_PREFIX|sweep-eligibility|sweep-resolution|aml|refund'
+```
 
 ## Production VPS Capacity Notes
 

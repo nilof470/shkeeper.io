@@ -106,18 +106,18 @@ class AmlPolicyTestCase(unittest.TestCase):
         self.assertEqual(check.deposit_decision, "manual_review")
         self.assertEqual(check.decision_reason, "risk_score_above_threshold")
 
-    def test_default_score_threshold_is_zero_point_seven_when_not_configured(self):
+    def test_default_score_threshold_is_zero_point_thirty_when_not_configured(self):
         self.app.config.pop("AML_MAX_ACCEPT_SCORE", None)
         tx = self.make_tx("150")
 
         accepted = decision_from_provider_result(
-            tx, {"provider_status": "success", "score": "0.70"}
+            tx, {"provider_status": "success", "score": "0.30"}
         )
         rejected = decision_from_provider_result(
-            tx, {"provider_status": "success", "score": "0.700001"}
+            tx, {"provider_status": "success", "score": "0.300001"}
         )
 
-        self.assertEqual(accepted.threshold, Decimal("0.70"))
+        self.assertEqual(accepted.threshold, Decimal("0.30"))
         self.assertEqual(accepted.deposit_decision, DepositDecision.CREDIT)
         self.assertEqual(rejected.deposit_decision, DepositDecision.MANUAL_REVIEW)
 

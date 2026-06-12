@@ -17,7 +17,7 @@ from shkeeper.services.aml_coverage import SUPPORTED_STATUS, get_coverage_policy
 AML_MIN_CHECK_AMOUNT_FIAT = Decimal("100")
 AML_SKIP_CUMULATIVE_LIMIT_FIAT = Decimal("300")
 AML_SKIP_CUMULATIVE_WINDOW_HOURS = 24
-AML_MAX_ACCEPT_SCORE = Decimal("0.70")
+AML_MAX_ACCEPT_SCORE = Decimal("0.30")
 
 
 def _config_value(name, default):

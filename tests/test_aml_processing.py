@@ -161,7 +161,7 @@ class AmlProcessingTestCase(unittest.TestCase):
 
         aml_processing.AmlShkeeperClient.create_check = create_check
 
-    def test_default_threshold_sent_to_sidecar_is_zero_point_seven_when_not_configured(self):
+    def test_default_threshold_sent_to_sidecar_is_zero_point_thirty_when_not_configured(self):
         self.app.config.pop("AML_MAX_ACCEPT_SCORE", None)
         payloads = []
 
@@ -174,8 +174,8 @@ class AmlProcessingTestCase(unittest.TestCase):
 
         check = aml_processing.ensure_aml_for_transaction(tx)
 
-        self.assertEqual(Decimal(payloads[0]["threshold"]), Decimal("0.70"))
-        self.assertEqual(check.threshold, Decimal("0.70"))
+        self.assertEqual(Decimal(payloads[0]["threshold"]), Decimal("0.30"))
+        self.assertEqual(check.threshold, Decimal("0.30"))
 
     def test_unsupported_asset_bypasses_aml_check(self):
         tx = self.make_tx("150", crypto="BTC-LIGHTNING")

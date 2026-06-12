@@ -118,7 +118,7 @@ def create_app(test_config=None):
         AML_SHKEEPER_PASSWORD=os.environ.get(
             "AML_SHKEEPER_PASSWORD", os.environ.get("AML_PASSWORD", "shkeeper")
         ),
-        AML_MAX_ACCEPT_SCORE=os.environ.get("AML_MAX_ACCEPT_SCORE", "0.70"),
+        AML_MAX_ACCEPT_SCORE=os.environ.get("AML_MAX_ACCEPT_SCORE", "0.30"),
         AML_MIN_CHECK_AMOUNT_FIAT=os.environ.get("AML_MIN_CHECK_AMOUNT_FIAT", "100"),
         AML_SKIP_CUMULATIVE_LIMIT_FIAT=os.environ.get(
             "AML_SKIP_CUMULATIVE_LIMIT_FIAT", "300"

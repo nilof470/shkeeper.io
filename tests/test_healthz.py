@@ -79,8 +79,8 @@ class HealthzTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), {"status": "ok"})
 
-    def test_default_aml_max_accept_score_is_zero_point_seven(self):
-        self.assertEqual(self.app.config["AML_MAX_ACCEPT_SCORE"], "0.70")
+    def test_default_aml_max_accept_score_is_zero_point_thirty(self):
+        self.assertEqual(self.app.config["AML_MAX_ACCEPT_SCORE"], "0.30")
 
     def test_payout_execution_reconciler_cli_command_is_registered(self):
         self.assertIn("payout-execution-reconciler", self.app.cli.commands)
