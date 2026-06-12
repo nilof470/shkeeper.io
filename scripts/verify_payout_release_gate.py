@@ -15,6 +15,7 @@ PROJECTS = ROOT.parent
 
 REPOS = {
     "shkeeper": ROOT,
+    "aml": PROJECTS / "aml-shkeeper",
     "ethereum": PROJECTS / "ethereum-shkeeper",
     "ton": PROJECTS / "ton-shkeeper",
     "tron": PROJECTS / "tron-shkeeper",
@@ -71,6 +72,7 @@ SIDECAR_PAYOUT_EXECUTION_POLICY_SCAN_PATHS = [
 ]
 IMAGE_REPOSITORIES = {
     "shkeeper": "ghcr.io/nilof470/shkeeper.io",
+    "aml": "ghcr.io/nilof470/aml-shkeeper",
     "tron": "ghcr.io/nilof470/tron-shkeeper",
     "ton": "ghcr.io/nilof470/ton-shkeeper",
     "ethereum": "ghcr.io/nilof470/ethereum-shkeeper",
@@ -82,6 +84,7 @@ PRODUCTION_OVERLAY_IMAGES = (
 )
 PRODUCTION_OVERLAY_IMAGE_FIELDS = {
     "shkeeper": ("shkeeper",),
+    "aml": ("aml_shkeeper",),
     "tron": ("tron_shkeeper",),
     "ton": ("ton_shkeeper",),
     "ethereum": ("ethereum_shkeeper",),
@@ -221,6 +224,24 @@ def validate_production_overlay_image_tags():
             "Production payout overlay image tags do not match current clean commits:\n"
             + "\n".join(missing)
         )
+    validate_values_image_tag("aml", REPOS["helm"] / "charts" / "shkeeper" / "values.yaml")
+
+
+def validate_values_image_tag(project, path):
+    tags = {project: git_short_head(REPOS[project])}
+    expected = f"{IMAGE_REPOSITORIES[project]}:{tags[project]}"
+    actual_values = image_values_for_sections(
+        path.read_text(encoding="utf-8"),
+        PRODUCTION_OVERLAY_IMAGE_FIELDS[project],
+    )
+    if expected not in actual_values:
+        if actual_values:
+            found = ", ".join(actual_values)
+            detail = f"expected {expected}, found {found}"
+        else:
+            sections = ", ".join(PRODUCTION_OVERLAY_IMAGE_FIELDS[project])
+            detail = f"missing image field in {sections}"
+        raise GateFailure(f"{path.name}: {detail}")
 
 
 def image_values_for_sections(text, sections):

@@ -797,19 +797,19 @@ Core image tags:
 
 ```yaml
 shkeeper:
-  image: ghcr.io/nilof470/shkeeper.io:e18e1e6
+  image: ghcr.io/nilof470/shkeeper.io:REPLACE_WITH_SHKEEPER_TAG
 
 tron_shkeeper:
-  image: ghcr.io/nilof470/tron-shkeeper:bf77c0c
+  image: ghcr.io/nilof470/tron-shkeeper:REPLACE_WITH_TRON_TAG
 
 ton_shkeeper:
-  image: ghcr.io/nilof470/ton-shkeeper:c912fbe
+  image: ghcr.io/nilof470/ton-shkeeper:REPLACE_WITH_TON_TAG
 
 ethereum_shkeeper:
-  image: ghcr.io/nilof470/ethereum-shkeeper:5192515
+  image: ghcr.io/nilof470/ethereum-shkeeper:REPLACE_WITH_ETH_TAG
 
 aml_shkeeper:
-  image: ghcr.io/nilof470/aml-shkeeper:7f28eed
+  image: ghcr.io/nilof470/aml-shkeeper:REPLACE_WITH_AML_TAG
 ```
 
 AML / Koinkyt settings:
