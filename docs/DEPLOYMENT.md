@@ -261,9 +261,9 @@ helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper \
 
 ## USDT Payout Release Command Sequence
 
-Use this sequence after the SHKeeper core, ETH sidecar, TON sidecar, and TRON
-sidecar changes have been reviewed, committed, and pushed. Do not build images
-from uncommitted payout changes.
+Use this sequence after the SHKeeper core, AML sidecar, ETH sidecar, TON
+sidecar, and TRON sidecar changes have been reviewed, committed, and pushed.
+Do not build images from uncommitted payout changes.
 
 The clean release gate also verifies that the checked-in Helm production
 overlay `image:` fields point at the exact clean commit tags below. Update and
@@ -271,6 +271,7 @@ commit the Helm overlay image tags before running `--require-clean`.
 
 ```bash
 SHKEEPER_TAG=$(git -C /Users/test/PycharmProjects/shkeeper.io rev-parse --short HEAD)
+AML_TAG=$(git -C /Users/test/PycharmProjects/aml-shkeeper rev-parse --short HEAD)
 TRON_TAG=$(git -C /Users/test/PycharmProjects/tron-shkeeper rev-parse --short HEAD)
 TON_TAG=$(git -C /Users/test/PycharmProjects/ton-shkeeper rev-parse --short HEAD)
 ETH_TAG=$(git -C /Users/test/PycharmProjects/ethereum-shkeeper rev-parse --short HEAD)
@@ -279,15 +280,17 @@ PAYOUT_CHART_VERSION=$(awk '/^version:/ {print $2; exit}' /Users/test/PycharmPro
 cd /Users/test/PycharmProjects/shkeeper-helm-charts
 perl -0pi -e "s|ghcr.io/nilof470/shkeeper.io:[A-Za-z0-9._-]+|ghcr.io/nilof470/shkeeper.io:${SHKEEPER_TAG}|g" \
   charts/shkeeper/environments/values-prod-*-payout.yaml
+perl -0pi -e "s|ghcr.io/nilof470/aml-shkeeper:[A-Za-z0-9._-]+|ghcr.io/nilof470/aml-shkeeper:${AML_TAG}|g" \
+  charts/shkeeper/values.yaml
 perl -0pi -e "s|ghcr.io/nilof470/tron-shkeeper:[A-Za-z0-9._-]+|ghcr.io/nilof470/tron-shkeeper:${TRON_TAG}|g" \
   charts/shkeeper/environments/values-prod-tron-payout.yaml
 perl -0pi -e "s|ghcr.io/nilof470/ton-shkeeper:[A-Za-z0-9._-]+|ghcr.io/nilof470/ton-shkeeper:${TON_TAG}|g" \
   charts/shkeeper/environments/values-prod-ton-payout.yaml
 perl -0pi -e "s|ghcr.io/nilof470/ethereum-shkeeper:[A-Za-z0-9._-]+|ghcr.io/nilof470/ethereum-shkeeper:${ETH_TAG}|g" \
   charts/shkeeper/environments/values-prod-eth-payout.yaml
-git diff -- charts/shkeeper/environments
+git diff -- charts/shkeeper/values.yaml charts/shkeeper/environments
 
-git add charts/shkeeper/environments/values-prod-*-payout.yaml
+git add charts/shkeeper/values.yaml charts/shkeeper/environments/values-prod-*-payout.yaml
 git commit -m "Update payout production image tags"
 git push origin "$(git branch --show-current)"
 
@@ -299,6 +302,10 @@ docker login ghcr.io -u nilof470
 docker buildx build --platform linux/amd64 \
   -t ghcr.io/nilof470/shkeeper.io:${SHKEEPER_TAG} \
   --push /Users/test/PycharmProjects/shkeeper.io
+
+docker buildx build --platform linux/amd64 \
+  -t ghcr.io/nilof470/aml-shkeeper:${AML_TAG} \
+  --push /Users/test/PycharmProjects/aml-shkeeper
 
 docker buildx build --platform linux/amd64 \
   -t ghcr.io/nilof470/tron-shkeeper:${TRON_TAG} \
@@ -313,6 +320,7 @@ docker buildx build --platform linux/amd64 \
   --push /Users/test/PycharmProjects/ethereum-shkeeper
 
 docker buildx imagetools inspect ghcr.io/nilof470/shkeeper.io:${SHKEEPER_TAG}
+docker buildx imagetools inspect ghcr.io/nilof470/aml-shkeeper:${AML_TAG}
 docker buildx imagetools inspect ghcr.io/nilof470/tron-shkeeper:${TRON_TAG}
 docker buildx imagetools inspect ghcr.io/nilof470/ton-shkeeper:${TON_TAG}
 docker buildx imagetools inspect ghcr.io/nilof470/ethereum-shkeeper:${ETH_TAG}
@@ -789,13 +797,19 @@ Core image tags:
 
 ```yaml
 shkeeper:
-  image: ghcr.io/nilof470/shkeeper.io:0e4c415
+  image: ghcr.io/nilof470/shkeeper.io:e18e1e6
 
 tron_shkeeper:
-  image: ghcr.io/nilof470/tron-shkeeper:REPLACE_WITH_TAG
+  image: ghcr.io/nilof470/tron-shkeeper:bf77c0c
+
+ton_shkeeper:
+  image: ghcr.io/nilof470/ton-shkeeper:c912fbe
+
+ethereum_shkeeper:
+  image: ghcr.io/nilof470/ethereum-shkeeper:5192515
 
 aml_shkeeper:
-  image: ghcr.io/nilof470/aml-shkeeper:f17e309
+  image: ghcr.io/nilof470/aml-shkeeper:7f28eed
 ```
 
 AML / Koinkyt settings:
