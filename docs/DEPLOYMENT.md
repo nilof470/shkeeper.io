@@ -346,12 +346,29 @@ export APP_NS=shkeeper
 export CHART_REF=oci://ghcr.io/nilof470/helm-charts/shkeeper
 export CHART_VERSION=1.7.28-nilof470.14
 
-helm -n "$HELM_NS" get values shkeeper -o yaml > /root/shkeeper-current-values.yaml
+cp -a /root/shkeeper-values.yaml "/root/shkeeper-values.yaml.$(date +%Y%m%d%H%M%S).bak"
+cp -a /root/shkeeper-payout-values.yaml "/root/shkeeper-payout-values.yaml.$(date +%Y%m%d%H%M%S).bak"
 
-helm upgrade shkeeper "$CHART_REF" \
+perl -0pi -e 's|(^shkeeper:\n(?:  .*\n)*?  image:\s*).*$|${1}ghcr.io/nilof470/shkeeper.io:80a8e23|m' \
+  /root/shkeeper-values.yaml /root/shkeeper-payout-values.yaml
+perl -0pi -e 's|(^aml_shkeeper:\n(?:  .*\n)*?  image:\s*).*$|${1}ghcr.io/nilof470/aml-shkeeper:7f28eed|m' \
+  /root/shkeeper-values.yaml /root/shkeeper-payout-values.yaml
+perl -0pi -e 's|(^tron_shkeeper:\n(?:  .*\n)*?  image:\s*).*$|${1}ghcr.io/nilof470/tron-shkeeper:bf77c0c|m' \
+  /root/shkeeper-values.yaml /root/shkeeper-payout-values.yaml
+perl -0pi -e 's|(^ton_shkeeper:\n(?:  .*\n)*?  image:\s*).*$|${1}ghcr.io/nilof470/ton-shkeeper:c912fbe|m' \
+  /root/shkeeper-values.yaml /root/shkeeper-payout-values.yaml
+perl -0pi -e 's|(^ethereum_shkeeper:\n(?:  .*\n)*?  image:\s*).*$|${1}ghcr.io/nilof470/ethereum-shkeeper:5192515|m' \
+  /root/shkeeper-values.yaml /root/shkeeper-payout-values.yaml
+perl -0pi -e 's|(^    AML_MAX_ACCEPT_SCORE:\s*).*$|${1}"0.70"|m; s|(^    AML_DEFAULT_THRESHOLD:\s*).*$|${1}"0.70"|m' \
+  /root/shkeeper-values.yaml /root/shkeeper-payout-values.yaml
+
+grep -nE 'ghcr.io/nilof470/(shkeeper.io|aml-shkeeper|tron-shkeeper|ton-shkeeper|ethereum-shkeeper):|AML_(MAX_ACCEPT_SCORE|DEFAULT_THRESHOLD)' \
+  /root/shkeeper-values.yaml /root/shkeeper-payout-values.yaml
+
+helm upgrade --install shkeeper "$CHART_REF" \
   --version "$CHART_VERSION" \
   -n "$HELM_NS" \
-  -f /root/shkeeper-current-values.yaml \
+  -f /root/shkeeper-values.yaml \
   -f /root/shkeeper-payout-values.yaml \
   --timeout 15m \
   --history-max 2
@@ -452,12 +469,10 @@ export CHART_VERSION=1.7.28-nilof470.14
 helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper \
   --version "$CHART_VERSION"
 
-helm -n "$HELM_NS" get values shkeeper -o yaml > /root/shkeeper-current-values.yaml
-
-helm upgrade shkeeper "$CHART_REF" \
+helm upgrade --install shkeeper "$CHART_REF" \
   --version "$CHART_VERSION" \
   -n "$HELM_NS" \
-  -f /root/shkeeper-current-values.yaml \
+  -f /root/shkeeper-values.yaml \
   -f /root/shkeeper-payout-values.yaml \
   --timeout 15m \
   --history-max 2
@@ -750,12 +765,10 @@ export APP_NS=shkeeper
 export CHART_REF=oci://ghcr.io/nilof470/helm-charts/shkeeper
 export CHART_VERSION=1.7.28-nilof470.14
 
-helm -n "$HELM_NS" get values shkeeper -o yaml > /root/shkeeper-current-values.yaml
-
-helm upgrade shkeeper "$CHART_REF" \
+helm upgrade --install shkeeper "$CHART_REF" \
   --version "$CHART_VERSION" \
   -n "$HELM_NS" \
-  -f /root/shkeeper-current-values.yaml \
+  -f /root/shkeeper-values.yaml \
   -f /root/shkeeper-payout-values.yaml \
   --timeout 15m \
   --history-max 2
@@ -1653,12 +1666,10 @@ export APP_NS=shkeeper
 export CHART_REF=oci://ghcr.io/nilof470/helm-charts/shkeeper
 export CHART_VERSION=1.7.28-nilof470.14
 
-helm -n "$HELM_NS" get values shkeeper -o yaml > /root/shkeeper-current-values.yaml
-
-helm upgrade shkeeper "$CHART_REF" \
+helm upgrade --install shkeeper "$CHART_REF" \
   --version "$CHART_VERSION" \
   -n "$HELM_NS" \
-  -f /root/shkeeper-current-values.yaml \
+  -f /root/shkeeper-values.yaml \
   -f /root/shkeeper-payout-values.yaml \
   --timeout 15m \
   --history-max 2
@@ -1735,12 +1746,10 @@ export APP_NS=shkeeper
 export CHART_REF=oci://ghcr.io/nilof470/helm-charts/shkeeper
 export CHART_VERSION=1.7.28-nilof470.14
 
-helm -n "$HELM_NS" get values shkeeper -o yaml > /root/shkeeper-current-values.yaml
-
-helm upgrade shkeeper "$CHART_REF" \
+helm upgrade --install shkeeper "$CHART_REF" \
   --version "$CHART_VERSION" \
   -n "$HELM_NS" \
-  -f /root/shkeeper-current-values.yaml \
+  -f /root/shkeeper-values.yaml \
   -f /root/shkeeper-payout-values.yaml \
   --timeout 15m \
   --history-max 2

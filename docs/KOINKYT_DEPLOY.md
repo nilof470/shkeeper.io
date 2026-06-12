@@ -14,8 +14,8 @@ IDs, thresholds, and other operational settings.
 These images have been built locally for `linux/amd64`:
 
 ```text
-ghcr.io/nilof470/shkeeper.io:0e4c415
-ghcr.io/nilof470/aml-shkeeper:f17e309
+ghcr.io/nilof470/shkeeper.io:80a8e23
+ghcr.io/nilof470/aml-shkeeper:7f28eed
 ```
 
 ## Build Or Push Images
@@ -25,8 +25,8 @@ If the local images already exist, push them:
 ```bash
 docker login ghcr.io -u nilof470
 
-docker push ghcr.io/nilof470/shkeeper.io:0e4c415
-docker push ghcr.io/nilof470/aml-shkeeper:f17e309
+docker push ghcr.io/nilof470/shkeeper.io:80a8e23
+docker push ghcr.io/nilof470/aml-shkeeper:7f28eed
 ```
 
 If rebuilding is needed, build and push immutable commit tags:
@@ -37,13 +37,13 @@ docker login ghcr.io -u nilof470
 cd /Users/test/PycharmProjects/shkeeper.io
 docker buildx build \
   --platform linux/amd64 \
-  -t ghcr.io/nilof470/shkeeper.io:0e4c415 \
+  -t ghcr.io/nilof470/shkeeper.io:80a8e23 \
   --push .
 
 cd /Users/test/PycharmProjects/aml-shkeeper
 docker buildx build \
   --platform linux/amd64 \
-  -t ghcr.io/nilof470/aml-shkeeper:f17e309 \
+  -t ghcr.io/nilof470/aml-shkeeper:7f28eed \
   --push .
 ```
 
@@ -62,7 +62,7 @@ dev:
     - name: ghcr-nilof470
 
 shkeeper:
-  image: ghcr.io/nilof470/shkeeper.io:0e4c415
+  image: ghcr.io/nilof470/shkeeper.io:80a8e23
   extraEnv:
     AML_ENABLED: "true"
     AML_PROVIDER: koinkyt
@@ -78,7 +78,7 @@ aml:
   enabled: true
 
 aml_shkeeper:
-  image: ghcr.io/nilof470/aml-shkeeper:f17e309
+  image: ghcr.io/nilof470/aml-shkeeper:7f28eed
   extraEnv:
     CURRENT_PROVIDER: koinkyt
     KOINKYT_HOST: https://explorer.coinkyt.com/openapi/v1
@@ -99,8 +99,8 @@ that the deployment is dev-only.
 This is the direct analogue of the TRON command:
 
 ```bash
-SHKEEPER_TAG=0e4c415
-AML_TAG=f17e309
+SHKEEPER_TAG=80a8e23
+AML_TAG=7f28eed
 
 sed -i "s|image: ghcr.io/nilof470/shkeeper.io:.*|image: ghcr.io/nilof470/shkeeper.io:${SHKEEPER_TAG}|" /root/shkeeper-values.yaml
 sed -i "s|image: ghcr.io/nilof470/aml-shkeeper:.*|image: ghcr.io/nilof470/aml-shkeeper:${AML_TAG}|" /root/shkeeper-values.yaml
@@ -109,7 +109,7 @@ sed -i "s|image: ghcr.io/nilof470/aml-shkeeper:.*|image: ghcr.io/nilof470/aml-sh
 After that, deploy through the published OCI chart:
 
 ```bash
-export CHART_VERSION=1.7.28-nilof470.10
+export CHART_VERSION=1.7.28-nilof470.14
 
 helm upgrade --install -n default \
   -f /root/shkeeper-values.yaml \
@@ -152,8 +152,8 @@ kubectl get deployment aml-shkeeper -n shkeeper \
 Expected images:
 
 ```text
-ghcr.io/nilof470/shkeeper.io:0e4c415
-ghcr.io/nilof470/aml-shkeeper:f17e309 ghcr.io/nilof470/aml-shkeeper:f17e309 redis
+ghcr.io/nilof470/shkeeper.io:80a8e23
+ghcr.io/nilof470/aml-shkeeper:7f28eed ghcr.io/nilof470/aml-shkeeper:7f28eed redis
 ```
 
 Verify AML env:
