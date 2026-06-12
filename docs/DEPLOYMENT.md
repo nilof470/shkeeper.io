@@ -336,7 +336,7 @@ published OCI chart and root-only values files as the source of truth.
 export HELM_NS=default
 export APP_NS=shkeeper
 export CHART_REF=oci://ghcr.io/nilof470/helm-charts/shkeeper
-export CHART_VERSION=1.7.28-nilof470.13
+export CHART_VERSION=1.7.28-nilof470.14
 
 helm -n "$HELM_NS" get values shkeeper -o yaml > /root/shkeeper-current-values.yaml
 
@@ -439,7 +439,7 @@ payout auth all come from the two root-owned values files.
 export HELM_NS=default
 export APP_NS=shkeeper
 export CHART_REF=oci://ghcr.io/nilof470/helm-charts/shkeeper
-export CHART_VERSION=1.7.28-nilof470.13
+export CHART_VERSION=1.7.28-nilof470.14
 
 helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper \
   --version "$CHART_VERSION"
@@ -534,7 +534,7 @@ Troubleshooting:
 
 - `Could not locate a version matching provided version string` means
   `CHART_VERSION` is empty or wrong. Export
-  `CHART_VERSION=1.7.28-nilof470.13` and confirm with `helm show chart`.
+  `CHART_VERSION=1.7.28-nilof470.14` and confirm with `helm show chart`.
 - `tron_shkeeper.extraEnv.TRON_USDT_PAYOUT_RESOURCE_PROVISIONING_ENABLED is
   managed by payouts.rails` means a chart-owned key is set directly under
   `tron_shkeeper.extraEnv`. Remove the direct env value from the values file.
@@ -606,7 +606,7 @@ read -s GHCR_TOKEN
 echo "$GHCR_TOKEN" | helm registry login ghcr.io -u nilof470 --password-stdin
 unset GHCR_TOKEN
 
-helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper --version 1.7.28-nilof470.13
+helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper --version 1.7.28-nilof470.14
 ```
 
 ## Namespace and Private GHCR Pull Secret
@@ -714,7 +714,7 @@ passwords, or Kubernetes secrets.
 
 The Helm chart fork is the source of truth for Kubernetes manifests. It is
 published as `oci://ghcr.io/nilof470/helm-charts/shkeeper` version
-`1.7.28-nilof470.13`. Use the published OCI chart directly for production
+`1.7.28-nilof470.14`. Use the published OCI chart directly for production
 deploys. This keeps a new VPS deployment independent from a local chart
 checkout.
 
@@ -730,7 +730,7 @@ active, the chart renders `tron-shkeeper` as the API/tasks/redis sidecar and
 `tron_usdt_fee_payouts`.
 
 ```bash
-helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper --version 1.7.28-nilof470.13
+helm show chart oci://ghcr.io/nilof470/helm-charts/shkeeper --version 1.7.28-nilof470.14
 ```
 
 The production deploy command is a direct Helm upgrade from root-only values
@@ -740,7 +740,7 @@ files. The target VPS does not need a local repository checkout for this step.
 export HELM_NS=default
 export APP_NS=shkeeper
 export CHART_REF=oci://ghcr.io/nilof470/helm-charts/shkeeper
-export CHART_VERSION=1.7.28-nilof470.13
+export CHART_VERSION=1.7.28-nilof470.14
 
 helm -n "$HELM_NS" get values shkeeper -o yaml > /root/shkeeper-current-values.yaml
 
@@ -1341,7 +1341,7 @@ Real deposits add more calls:
 ```bash
 helm upgrade --install -n default -f /root/shkeeper-values.yaml \
   shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
-  --version 1.7.28-nilof470.13 --timeout 300s
+  --version 1.7.28-nilof470.14 --timeout 300s
 ```
 
 Watch startup:
@@ -1637,7 +1637,7 @@ Apply the staged payout release with the published payout chart:
 export HELM_NS=default
 export APP_NS=shkeeper
 export CHART_REF=oci://ghcr.io/nilof470/helm-charts/shkeeper
-export CHART_VERSION=1.7.28-nilof470.13
+export CHART_VERSION=1.7.28-nilof470.14
 
 helm -n "$HELM_NS" get values shkeeper -o yaml > /root/shkeeper-current-values.yaml
 
@@ -1719,7 +1719,7 @@ avoids one-off CLI overrides that drift from the server values.
 export HELM_NS=default
 export APP_NS=shkeeper
 export CHART_REF=oci://ghcr.io/nilof470/helm-charts/shkeeper
-export CHART_VERSION=1.7.28-nilof470.13
+export CHART_VERSION=1.7.28-nilof470.14
 
 helm -n "$HELM_NS" get values shkeeper -o yaml > /root/shkeeper-current-values.yaml
 
@@ -1823,7 +1823,7 @@ helm list -A | grep shkeeper
 
 helm upgrade --install -n default -f /root/shkeeper-values.yaml \
   shkeeper oci://ghcr.io/nilof470/helm-charts/shkeeper \
-  --version 1.7.28-nilof470.13 --timeout 300s
+  --version 1.7.28-nilof470.14 --timeout 300s
 
 kubectl rollout status deployment/ton-shkeeper -n shkeeper --timeout=180s
 ```
