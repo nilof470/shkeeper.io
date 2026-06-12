@@ -339,6 +339,9 @@ Deploy the staged release with all rails still paused and kill-switched in
 `/root/shkeeper-payout-values.yaml`. The production VPS deploy path must not
 depend on a local `/opt/shkeeper.io` checkout or on `git pull`; use the
 published OCI chart and root-only values files as the source of truth.
+The `shkeeper.io` and `aml-shkeeper` image tags in this command are code image
+commits; a later docs-only commit may update this runbook without requiring a
+new app image tag.
 
 ```bash
 export HELM_NS=default
@@ -349,9 +352,9 @@ export CHART_VERSION=1.7.28-nilof470.14
 cp -a /root/shkeeper-values.yaml "/root/shkeeper-values.yaml.$(date +%Y%m%d%H%M%S).bak"
 cp -a /root/shkeeper-payout-values.yaml "/root/shkeeper-payout-values.yaml.$(date +%Y%m%d%H%M%S).bak"
 
-perl -0pi -e 's|(^shkeeper:\n(?:  .*\n)*?  image:\s*).*$|${1}ghcr.io/nilof470/shkeeper.io:80a8e23|m' \
+perl -0pi -e 's|(^shkeeper:\n(?:  .*\n)*?  image:\s*).*$|${1}ghcr.io/nilof470/shkeeper.io:6fae0b2|m' \
   /root/shkeeper-values.yaml /root/shkeeper-payout-values.yaml
-perl -0pi -e 's|(^aml_shkeeper:\n(?:  .*\n)*?  image:\s*).*$|${1}ghcr.io/nilof470/aml-shkeeper:7f28eed|m' \
+perl -0pi -e 's|(^aml_shkeeper:\n(?:  .*\n)*?  image:\s*).*$|${1}ghcr.io/nilof470/aml-shkeeper:37232bb|m' \
   /root/shkeeper-values.yaml /root/shkeeper-payout-values.yaml
 perl -0pi -e 's|(^tron_shkeeper:\n(?:  .*\n)*?  image:\s*).*$|${1}ghcr.io/nilof470/tron-shkeeper:bf77c0c|m' \
   /root/shkeeper-values.yaml /root/shkeeper-payout-values.yaml
