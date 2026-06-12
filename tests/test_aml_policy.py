@@ -5,7 +5,7 @@ from decimal import Decimal
 from flask import Flask
 
 from shkeeper import db
-from shkeeper.models import DepositDecision, Invoice, Transaction
+from shkeeper.models import AmlStatus, DepositDecision, Invoice, Transaction
 from shkeeper.services.aml_policy import (
     build_skipped_check,
     decision_from_provider_result,
@@ -106,6 +106,21 @@ class AmlPolicyTestCase(unittest.TestCase):
         self.assertEqual(check.deposit_decision, "manual_review")
         self.assertEqual(check.decision_reason, "risk_score_above_threshold")
 
+    def test_default_score_threshold_is_zero_point_seven_when_not_configured(self):
+        self.app.config.pop("AML_MAX_ACCEPT_SCORE", None)
+        tx = self.make_tx("150")
+
+        accepted = decision_from_provider_result(
+            tx, {"provider_status": "success", "score": "0.70"}
+        )
+        rejected = decision_from_provider_result(
+            tx, {"provider_status": "success", "score": "0.700001"}
+        )
+
+        self.assertEqual(accepted.threshold, Decimal("0.70"))
+        self.assertEqual(accepted.deposit_decision, DepositDecision.CREDIT)
+        self.assertEqual(rejected.deposit_decision, DepositDecision.MANUAL_REVIEW)
+
     def test_missing_score_manual_review(self):
         tx = self.make_tx("150")
         check = decision_from_provider_result(tx, {"provider_status": "success"})
@@ -158,12 +173,13 @@ class AmlPolicyTestCase(unittest.TestCase):
         self.assertEqual(check.deposit_decision, "manual_review")
         self.assertEqual(check.decision_reason, "too_many_indirects")
 
-    def test_unsupported_asset_manual_review(self):
+    def test_unsupported_asset_credits_without_manual_review(self):
         tx = self.make_tx("150", crypto="BTC-LIGHTNING")
         check = decision_from_provider_result(
             tx, {"provider_status": "success", "score": "0.01"}
         )
-        self.assertEqual(check.deposit_decision, "manual_review")
+        self.assertEqual(check.status, AmlStatus.SKIPPED)
+        self.assertEqual(check.deposit_decision, DepositDecision.CREDIT)
         self.assertEqual(check.decision_reason, "limited_analysis_requires_review")
 
 

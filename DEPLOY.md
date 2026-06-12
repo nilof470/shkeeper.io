@@ -80,6 +80,13 @@ Expected:
 - service: `shkeeper`
 - service port: `5000`
 
+Do not expose the SHKeeper web container directly on public port `5000`.
+Public traffic must enter through Traefik on `80/tcp` and `443/tcp` only. A
+`LoadBalancer`/NodePort service such as `shkeeper-external` bypasses Traefik and
+lets internet clients connect directly to gunicorn; malformed, TLS-on-HTTP, or
+slow direct clients can occupy every gunicorn `gthread` request thread and make
+the admin UI and `/healthz` hang.
+
 ## Create HTTPS Config
 
 Create `k3s_cert.yaml` on the VPS.
@@ -209,6 +216,23 @@ curl -Iv https://core.grither.company
 The SHKeeper image includes `/healthz` and gunicorn worker timeouts. Deploy the
 new image before enabling probes, because older images do not have `/healthz`.
 
+The SHKeeper web image runs behind Traefik with gunicorn backend keep-alive
+disabled (`--keep-alive 0`). Keep this setting for the web container. With a
+single `gthread` worker, backend keep-alive sockets can otherwise occupy all
+request threads while gunicorn waits for the next HTTP request line; in that
+state even `/healthz` hangs although the pod is still `Ready`.
+
+Also make sure no raw SHKeeper service is exposed on the node:
+
+```bash
+kubectl get svc -n shkeeper -o wide
+curl -v --connect-timeout 5 --max-time 8 http://<public-vps-ip>:5000/healthz
+```
+
+The direct `:5000` curl must fail to connect from the internet. If it connects,
+remove or disable the public `LoadBalancer`/NodePort service and keep only the
+internal `shkeeper` ClusterIP service used by Traefik.
+
 After pushing a new `ghcr.io/nilof470/shkeeper.io:<tag>` image:
 
 ```bash
@@ -238,6 +262,25 @@ kubectl patch deployment shkeeper-deployment -n shkeeper --type=json -p='[
 kubectl rollout status deployment/shkeeper-deployment -n shkeeper --timeout=180s
 kubectl describe deployment shkeeper-deployment -n shkeeper | grep -A8 -E 'Liveness|Readiness'
 ```
+
+If `/healthz` times out inside the web pod, check whether all gunicorn request
+threads are blocked in HTTP request parsing:
+
+```bash
+POD=$(kubectl get pod -n shkeeper \
+  -l app.kubernetes.io/name=shkeeper,app.kubernetes.io/component=web \
+  -o jsonpath='{.items[0].metadata.name}')
+
+kubectl exec -n shkeeper "$POD" -- ps -eLf
+kubectl exec -n shkeeper "$POD" -- sh -lc 'pip install -q py-spy'
+kubectl exec -n shkeeper "$POD" -- sh -lc 'py-spy dump --pid 8' || true
+```
+
+A dump where every `ThreadPoolExecutor-0_*` thread is in
+`gunicorn/http/unreader.py` `read()` or `chunk()` means gunicorn has exhausted
+its request thread pool on idle or incomplete backend HTTP connections. Deploy
+an image that uses `--keep-alive 0`, then verify `/healthz` and enable the
+readiness/liveness probes above.
 
 ## Troubleshooting YAML Indentation
 

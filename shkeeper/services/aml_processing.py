@@ -7,6 +7,7 @@ from shkeeper import db
 from shkeeper.models import AmlCheck, AmlStatus, DepositDecision, InvoiceStatus
 from shkeeper.services.aml_coverage import SUPPORTED_STATUS, get_coverage_policy
 from shkeeper.services.aml_policy import (
+    AML_MAX_ACCEPT_SCORE,
     build_deposit_id,
     build_idempotency_key,
     build_skipped_check,
@@ -15,6 +16,7 @@ from shkeeper.services.aml_policy import (
     should_skip_aml,
 )
 from shkeeper.services.aml_shkeeper_client import AmlShkeeperClient
+from shkeeper.services.sweep_guard_policy import is_sweep_guarded_crypto
 
 
 SNAPSHOT_FIELDS = (
@@ -59,10 +61,16 @@ def _timeout_at(now=None):
     )
 
 
+def _requires_sweep_guard(tx):
+    return is_sweep_guarded_crypto(tx.crypto)
+
+
 def _apply_snapshot(target, source):
     existing_timeout_at = target.timeout_at
+    existing_create_check_submitted = target.create_check_submitted
     for field in SNAPSHOT_FIELDS:
         setattr(target, field, getattr(source, field))
+    target.create_check_submitted = existing_create_check_submitted
     if target.timeout_at is None:
         target.timeout_at = existing_timeout_at
     return target
@@ -92,9 +100,10 @@ def _pending_check(tx, coverage):
         provider=coverage["provider"],
         provider_status="pending",
         status=AmlStatus.PENDING,
+        sweep_guard_required=_requires_sweep_guard(tx),
         asset=coverage["asset"],
         network=coverage["network"],
-        threshold=current_app.config.get("AML_MAX_ACCEPT_SCORE", "0.10"),
+        threshold=current_app.config.get("AML_MAX_ACCEPT_SCORE", str(AML_MAX_ACCEPT_SCORE)),
         timeout_at=_timeout_at(),
     )
 
@@ -147,6 +156,29 @@ def _resolve_client_result(check, result):
     return _resolve_from_result(check, result)
 
 
+def _client_exception_result(exc):
+    return {
+        "status": "transport_error",
+        "provider_status": "error",
+        "error_source": "aml-shkeeper",
+        "error_code": "aml_shkeeper_exception",
+        "error_message": str(exc),
+    }
+
+
+def _create_check_with_sidecar(tx, check):
+    try:
+        result = AmlShkeeperClient().create_check(_payload_for_sidecar(tx, check))
+    except Exception as exc:
+        current_app.logger.exception(
+            "[%s/%s] AML sidecar check creation failed", tx.crypto, tx.txid
+        )
+        result = _client_exception_result(exc)
+    else:
+        check.create_check_submitted = not _is_retryable_sidecar_error(result)
+    return _resolve_client_result(check, result)
+
+
 def _resolve_timeout(check):
     check.status = AmlStatus.MANUAL_REVIEW
     check.deposit_decision = DepositDecision.MANUAL_REVIEW
@@ -179,15 +211,24 @@ def ensure_aml_for_transaction(tx):
         return _persist_new_check(build_skipped_check(tx))
 
     check = _persist_new_check(_pending_check(tx, coverage))
-    result = AmlShkeeperClient().create_check(_payload_for_sidecar(tx, check))
-    return _resolve_client_result(check, result)
+    return _create_check_with_sidecar(tx, check)
 
 
 def refresh_aml_check(aml_check):
     now = _now()
     if aml_check.timeout_at and aml_check.timeout_at <= now:
         return _resolve_timeout(aml_check)
-    result = AmlShkeeperClient().get_check(aml_check.deposit_id)
+    if not aml_check.create_check_submitted:
+        return _create_check_with_sidecar(aml_check.transaction, aml_check)
+    try:
+        result = AmlShkeeperClient().get_check(aml_check.deposit_id)
+    except Exception as exc:
+        current_app.logger.exception(
+            "[%s/%s] AML sidecar check polling failed",
+            aml_check.transaction.crypto,
+            aml_check.transaction.txid,
+        )
+        result = _client_exception_result(exc)
     return _resolve_client_result(aml_check, result)
 
 

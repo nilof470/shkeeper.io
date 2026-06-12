@@ -748,6 +748,8 @@ class AmlCheck(db.Model):
     provider = db.Column(db.String(30), default="koinkyt")
     provider_status = db.Column(db.String(30))
     status = db.Column(db.String(30), nullable=False, default=AmlStatus.PENDING)
+    sweep_guard_required = db.Column(db.Boolean, nullable=False, default=False)
+    create_check_submitted = db.Column(db.Boolean, nullable=False, default=False)
     deposit_decision = db.Column(db.String(30))
     decision_reason = db.Column(db.String(80))
     score = db.Column(db.Numeric(precision=7, scale=5), nullable=True)
@@ -776,6 +778,57 @@ class AmlCheck(db.Model):
     )
 
     transaction = db.relationship("Transaction", back_populates="aml_check")
+
+
+class AmlSweepResolution(db.Model):
+    __tablename__ = "aml_sweep_resolution"
+
+    id = db.Column(db.Integer, primary_key=True)
+    transaction_id = db.Column(
+        db.Integer, db.ForeignKey("transaction.id"), nullable=False
+    )
+    deposit_id = db.Column(db.String(120), nullable=False, index=True)
+    txid = db.Column(db.String, nullable=False)
+    crypto = db.Column(db.String(30), nullable=False)
+    network = db.Column(db.String(30), nullable=False)
+    address = db.Column(db.String, nullable=False)
+    resolution_type = db.Column(db.String(30), nullable=False)
+    reviewer = db.Column(db.String(255), nullable=False)
+    reason = db.Column(db.Text, nullable=False)
+    external_review_id = db.Column(db.String(255), nullable=False)
+    idempotency_key = db.Column(db.String(255), nullable=False, index=True)
+    refund_txid = db.Column(db.String)
+    refund_to_address = db.Column(db.String)
+    refund_amount = db.Column(db.Numeric(precision=36, scale=18))
+    refund_source_address = db.Column(db.String)
+    refund_asset = db.Column(db.String(80))
+    refund_network = db.Column(db.String(40))
+    refund_notes = db.Column(db.Text)
+    request_digest = db.Column(db.String(64), nullable=False)
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp(), index=True)
+    updated_at = db.Column(
+        db.DateTime,
+        default=db.func.current_timestamp(),
+        onupdate=db.func.current_timestamp(),
+    )
+
+    transaction = db.relationship("Transaction")
+
+    __table_args__ = (
+        db.CheckConstraint(
+            "resolution_type in ('approved', 'refunded')",
+            name="ck_aml_sweep_resolution_resolution_type",
+        ),
+        db.UniqueConstraint("deposit_id", name="uq_aml_sweep_resolution_deposit_id"),
+        db.UniqueConstraint(
+            "idempotency_key",
+            name="uq_aml_sweep_resolution_idempotency_key",
+        ),
+        db.UniqueConstraint(
+            "transaction_id",
+            name="uq_aml_sweep_resolution_transaction_id",
+        ),
+    )
 
 
 class PayoutStatus(enum.Enum):
@@ -1261,7 +1314,10 @@ class InvoiceAddress(db.Model):
     crypto = db.Column(db.String)
     addr = db.Column(db.String)
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
-    __table_args__ = (db.UniqueConstraint("invoice_id", "crypto", "addr"),)
+    __table_args__ = (
+        db.UniqueConstraint("invoice_id", "crypto", "addr"),
+        db.Index("ix_invoice_address_crypto_addr", "crypto", "addr"),
+    )
 
 
 class BitcoinLightningInvoice(db.Model):

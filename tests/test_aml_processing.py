@@ -40,23 +40,83 @@ class AmlProcessingTestCase(unittest.TestCase):
         self.ctx = self.app.app_context()
         self.ctx.push()
         db.create_all()
-        db.session.add(
-            Wallet(
-                crypto="BTC",
-                apikey="api-key",
-                llimit=Decimal("95"),
-                ulimit=Decimal("105"),
-            )
+        db.session.add_all(
+            [
+                Wallet(
+                    crypto="BTC",
+                    apikey="api-key",
+                    llimit=Decimal("95"),
+                    ulimit=Decimal("105"),
+                ),
+                Wallet(
+                    crypto="USDT",
+                    apikey="api-key",
+                    llimit=Decimal("95"),
+                    ulimit=Decimal("105"),
+                ),
+                Wallet(
+                    crypto="ETH-USDT",
+                    apikey="api-key",
+                    llimit=Decimal("95"),
+                    ulimit=Decimal("105"),
+                ),
+                Wallet(
+                    crypto="BNB-USDT",
+                    apikey="api-key",
+                    llimit=Decimal("95"),
+                    ulimit=Decimal("105"),
+                ),
+                Wallet(
+                    crypto="TON-USDT",
+                    apikey="api-key",
+                    llimit=Decimal("95"),
+                    ulimit=Decimal("105"),
+                ),
+            ]
         )
-        db.session.add(
-            ExchangeRate(
-                crypto="BTC",
-                fiat="USD",
-                rate=Decimal("1000"),
-                fee=Decimal("0"),
-                fixed_fee=Decimal("0"),
-                fee_policy=FeeCalculationPolicy.PERCENT_FEE,
-            )
+        db.session.add_all(
+            [
+                ExchangeRate(
+                    crypto="BTC",
+                    fiat="USD",
+                    rate=Decimal("1000"),
+                    fee=Decimal("0"),
+                    fixed_fee=Decimal("0"),
+                    fee_policy=FeeCalculationPolicy.PERCENT_FEE,
+                ),
+                ExchangeRate(
+                    crypto="USDT",
+                    fiat="USD",
+                    rate=Decimal("1"),
+                    fee=Decimal("0"),
+                    fixed_fee=Decimal("0"),
+                    fee_policy=FeeCalculationPolicy.PERCENT_FEE,
+                ),
+                ExchangeRate(
+                    crypto="ETH-USDT",
+                    fiat="USD",
+                    rate=Decimal("1"),
+                    fee=Decimal("0"),
+                    fixed_fee=Decimal("0"),
+                    fee_policy=FeeCalculationPolicy.PERCENT_FEE,
+                ),
+                ExchangeRate(
+                    crypto="BNB-USDT",
+                    fiat="USD",
+                    rate=Decimal("1"),
+                    fee=Decimal("0"),
+                    fixed_fee=Decimal("0"),
+                    fee_policy=FeeCalculationPolicy.PERCENT_FEE,
+                ),
+                ExchangeRate(
+                    crypto="TON-USDT",
+                    fiat="USD",
+                    rate=Decimal("1"),
+                    fee=Decimal("0"),
+                    fixed_fee=Decimal("0"),
+                    fee_policy=FeeCalculationPolicy.PERCENT_FEE,
+                ),
+            ]
         )
         db.session.commit()
         self.original_create_check = aml_processing.AmlShkeeperClient.create_check
@@ -95,6 +155,28 @@ class AmlProcessingTestCase(unittest.TestCase):
         db.session.commit()
         return tx
 
+    def stub_sidecar_pending_result(self):
+        def create_check(client, payload):
+            return {"provider_status": "pending", "status": "pending"}
+
+        aml_processing.AmlShkeeperClient.create_check = create_check
+
+    def test_default_threshold_sent_to_sidecar_is_zero_point_seven_when_not_configured(self):
+        self.app.config.pop("AML_MAX_ACCEPT_SCORE", None)
+        payloads = []
+
+        def create_check(client, payload):
+            payloads.append(payload)
+            return {"provider_status": "pending", "status": "pending"}
+
+        aml_processing.AmlShkeeperClient.create_check = create_check
+        tx = self.make_tx("150", crypto="USDT")
+
+        check = aml_processing.ensure_aml_for_transaction(tx)
+
+        self.assertEqual(Decimal(payloads[0]["threshold"]), Decimal("0.70"))
+        self.assertEqual(check.threshold, Decimal("0.70"))
+
     def test_unsupported_asset_bypasses_aml_check(self):
         tx = self.make_tx("150", crypto="BTC-LIGHTNING")
         check = aml_processing.ensure_aml_for_transaction(tx)
@@ -116,6 +198,50 @@ class AmlProcessingTestCase(unittest.TestCase):
         self.assertEqual(check.status, AmlStatus.SKIPPED)
         self.assertEqual(check.deposit_decision, DepositDecision.CREDIT)
 
+    def test_new_tron_usdt_above_skip_threshold_sets_sweep_guard_required(self):
+        self.stub_sidecar_pending_result()
+        tx = self.make_tx("150", crypto="USDT")
+        check = aml_processing.ensure_aml_for_transaction(tx)
+        self.assertTrue(check.sweep_guard_required)
+
+    def test_new_eth_usdt_above_skip_threshold_sets_sweep_guard_required(self):
+        self.stub_sidecar_pending_result()
+        tx = self.make_tx("150", crypto="ETH-USDT")
+        check = aml_processing.ensure_aml_for_transaction(tx)
+        self.assertTrue(check.sweep_guard_required)
+
+    def test_unsupported_ton_usdt_bypasses_aml_check_until_provider_coverage_exists(self):
+        def fail_create(*args, **kwargs):
+            raise AssertionError("unsupported TON-USDT must not call AML sidecar")
+
+        aml_processing.AmlShkeeperClient.create_check = fail_create
+        tx = self.make_tx("150", crypto="TON-USDT")
+
+        check = aml_processing.ensure_aml_for_transaction(tx)
+
+        self.assertIsNone(check)
+        self.assertTrue(aml_processing.is_callback_allowed(tx))
+
+    def test_unsupported_bep20_usdt_bypasses_aml_check_until_provider_coverage_exists(self):
+        tx = self.make_tx("150", crypto="BNB-USDT")
+
+        check = aml_processing.ensure_aml_for_transaction(tx)
+
+        self.assertIsNone(check)
+        self.assertTrue(aml_processing.is_callback_allowed(tx))
+
+    def test_new_tron_usdt_skipped_small_amount_does_not_need_sweep_guard(self):
+        tx = self.make_tx("50", crypto="USDT")
+        check = aml_processing.ensure_aml_for_transaction(tx)
+        self.assertEqual(check.status, AmlStatus.SKIPPED)
+        self.assertFalse(check.sweep_guard_required)
+
+    def test_legacy_or_non_guarded_check_defaults_to_not_guarded(self):
+        self.stub_sidecar_pending_result()
+        tx = self.make_tx("150", crypto="BTC")
+        check = aml_processing.ensure_aml_for_transaction(tx)
+        self.assertFalse(check.sweep_guard_required)
+
     def test_supported_above_threshold_creates_sidecar_check(self):
         calls = []
 
@@ -131,6 +257,7 @@ class AmlProcessingTestCase(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0]["deposit_id"], f"shkeeper-tx-{tx.id}")
         self.assertEqual(check.status, AmlStatus.CHECKING)
+        self.assertTrue(check.create_check_submitted)
 
     def test_sidecar_auth_error_remains_retryable_until_timeout(self):
         def create_check(client, payload):
@@ -152,7 +279,140 @@ class AmlProcessingTestCase(unittest.TestCase):
         self.assertIsNone(check.decision_reason)
         self.assertEqual(check.error_code, "http_401")
         self.assertIsNotNone(check.next_retry_at)
+        self.assertFalse(check.create_check_submitted)
         self.assertFalse(aml_processing.is_callback_allowed(tx))
+
+    def test_returned_sidecar_transport_error_retries_create_before_polling(self):
+        calls = []
+
+        def create_check(client, payload):
+            calls.append(("create", payload["deposit_id"]))
+            if len(calls) == 1:
+                return {
+                    "provider_status": "error",
+                    "error_source": "aml-shkeeper",
+                    "error_code": "transport_error",
+                    "error_message": "connection timeout",
+                }
+            return {
+                "provider_status": "success",
+                "status": "ready",
+                "score": "0.04",
+                "uid": "koinkyt-check-id",
+            }
+
+        def get_check(client, deposit_id):
+            calls.append(("get", deposit_id))
+            return {
+                "provider_status": "error",
+                "status": "failed",
+                "error_code": "not_found",
+                "error_message": "deposit does not exist",
+            }
+
+        aml_processing.AmlShkeeperClient.create_check = create_check
+        aml_processing.AmlShkeeperClient.get_check = get_check
+        tx = self.make_tx("150")
+
+        initial = aml_processing.ensure_aml_for_transaction(tx)
+        self.assertFalse(initial.create_check_submitted)
+        refreshed = aml_processing.refresh_aml_check(initial)
+
+        self.assertEqual(
+            calls,
+            [
+                ("create", f"shkeeper-tx-{tx.id}"),
+                ("create", f"shkeeper-tx-{tx.id}"),
+            ],
+        )
+        self.assertEqual(refreshed.status, AmlStatus.APPROVED)
+        self.assertEqual(refreshed.deposit_decision, DepositDecision.CREDIT)
+
+    def test_sidecar_create_exception_remains_retryable_until_timeout(self):
+        def create_check(client, payload):
+            raise RuntimeError("connection reset by peer")
+
+        aml_processing.AmlShkeeperClient.create_check = create_check
+        tx = self.make_tx("150")
+
+        check = aml_processing.ensure_aml_for_transaction(tx)
+
+        self.assertEqual(check.status, AmlStatus.CHECKING)
+        self.assertEqual(check.provider_status, "checking")
+        self.assertIsNone(check.deposit_decision)
+        self.assertIsNone(check.decision_reason)
+        self.assertEqual(check.error_code, "aml_shkeeper_exception")
+        self.assertIn("connection reset by peer", check.error_message)
+        self.assertIsNotNone(check.next_retry_at)
+        self.assertFalse(check.create_check_submitted)
+        self.assertFalse(aml_processing.is_callback_allowed(tx))
+
+    def test_create_exception_retries_create_before_polling_missing_sidecar_check(self):
+        calls = []
+
+        def create_check(client, payload):
+            calls.append(("create", payload["deposit_id"]))
+            if len(calls) == 1:
+                raise RuntimeError("connection reset by peer")
+            return {
+                "provider_status": "success",
+                "status": "ready",
+                "score": "0.04",
+                "uid": "koinkyt-check-id",
+            }
+
+        def get_check(client, deposit_id):
+            calls.append(("get", deposit_id))
+            return {
+                "provider_status": "error",
+                "status": "failed",
+                "error_code": "not_found",
+                "error_message": "deposit does not exist",
+            }
+
+        aml_processing.AmlShkeeperClient.create_check = create_check
+        aml_processing.AmlShkeeperClient.get_check = get_check
+        tx = self.make_tx("150")
+
+        initial = aml_processing.ensure_aml_for_transaction(tx)
+        refreshed = aml_processing.refresh_aml_check(initial)
+
+        self.assertEqual(
+            calls,
+            [
+                ("create", f"shkeeper-tx-{tx.id}"),
+                ("create", f"shkeeper-tx-{tx.id}"),
+            ],
+        )
+        self.assertEqual(refreshed.status, AmlStatus.APPROVED)
+        self.assertEqual(refreshed.deposit_decision, DepositDecision.CREDIT)
+
+    def test_polling_exception_remains_retryable_until_timeout(self):
+        def get_check(client, deposit_id):
+            raise RuntimeError("connection reset by peer")
+
+        aml_processing.AmlShkeeperClient.get_check = get_check
+        tx = self.make_tx("150")
+        check = AmlCheck(
+            transaction_id=tx.id,
+            deposit_id=f"shkeeper-tx-{tx.id}",
+            idempotency_key=f"BTC:{tx.txid}:shkeeper-tx-{tx.id}",
+            provider="koinkyt",
+            status=AmlStatus.CHECKING,
+            provider_status="pending",
+            create_check_submitted=True,
+        )
+        db.session.add(check)
+        db.session.commit()
+
+        refreshed = aml_processing.refresh_aml_check(check)
+
+        self.assertEqual(refreshed.status, AmlStatus.CHECKING)
+        self.assertEqual(refreshed.provider_status, "checking")
+        self.assertIsNone(refreshed.deposit_decision)
+        self.assertEqual(refreshed.error_code, "aml_shkeeper_exception")
+        self.assertIn("connection reset by peer", refreshed.error_message)
+        self.assertIsNotNone(refreshed.next_retry_at)
 
     def test_provider_error_still_goes_to_manual_review(self):
         def create_check(client, payload):

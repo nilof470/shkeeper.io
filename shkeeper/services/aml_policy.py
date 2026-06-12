@@ -17,7 +17,7 @@ from shkeeper.services.aml_coverage import SUPPORTED_STATUS, get_coverage_policy
 AML_MIN_CHECK_AMOUNT_FIAT = Decimal("100")
 AML_SKIP_CUMULATIVE_LIMIT_FIAT = Decimal("300")
 AML_SKIP_CUMULATIVE_WINDOW_HOURS = 24
-AML_MAX_ACCEPT_SCORE = Decimal("0.10")
+AML_MAX_ACCEPT_SCORE = Decimal("0.70")
 
 
 def _config_value(name, default):
@@ -179,9 +179,12 @@ def build_skipped_check(tx):
 def unsupported_check(tx):
     policy = get_coverage_policy(tx.crypto)
     check = _base_check(tx)
-    check.status = AmlStatus.MANUAL_REVIEW
-    check.deposit_decision = DepositDecision.MANUAL_REVIEW
+    check.status = AmlStatus.SKIPPED
+    check.provider_status = "unsupported"
+    check.deposit_decision = DepositDecision.CREDIT
     check.decision_reason = policy.get("reason") or "unsupported_asset"
+    check.error_code = check.decision_reason
+    check.error_message = "AML provider does not support this asset"
     check.provider = policy.get("provider") or check.provider
     check.asset = policy.get("asset")
     check.network = policy.get("network")

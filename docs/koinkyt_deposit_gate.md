@@ -67,7 +67,7 @@ SHKeeper merchant callbacks do not include:
 - `AML_MIN_CHECK_AMOUNT_FIAT=100`
 - `AML_SKIP_CUMULATIVE_LIMIT_FIAT=300`
 - `AML_SKIP_CUMULATIVE_WINDOW=24h`
-- `AML_MAX_ACCEPT_SCORE=0.10`
+- `AML_MAX_ACCEPT_SCORE=0.70`
 
 Sweep is separate operational logic. Recommended starting value: `SWEEP_MIN_AMOUNT_FIAT=300`.
 

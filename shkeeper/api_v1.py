@@ -1,4 +1,5 @@
 import traceback
+from hmac import compare_digest
 from decimal import Decimal
 from os import environ
 from concurrent.futures import ThreadPoolExecutor
@@ -42,6 +43,11 @@ from shkeeper.callback import send_notification, send_unconfirmed_notification
 from shkeeper.services.aml_processing import (
     ensure_aml_for_transaction,
     is_callback_allowed,
+)
+from shkeeper.services.sweep_eligibility import decide_sweep_eligibility
+from shkeeper.services.sweep_resolution import (
+    SweepResolutionError,
+    record_sweep_resolution,
 )
 from shkeeper.utils import format_decimal
 from shkeeper.wallet_encryption import (
@@ -105,6 +111,34 @@ def handle_request_error(func):
 def _current_operator_id():
     user = getattr(g, "user", None)
     return getattr(user, "username", None)
+
+
+def _backend_key_auth_error():
+    if "X-Shkeeper-Backend-Key" not in request.headers:
+        app.logger.warning("No backend key provided")
+        return {"status": "error", "message": "No backend key provided"}, 403
+
+    bkey = environ.get("SHKEEPER_BACKEND_KEY") or environ.get("SHKEEPER_BTC_BACKEND_KEY")
+    if not bkey:
+        app.logger.error("Backend key is not configured")
+        return {"status": "error", "message": "Backend key is not configured"}, 503
+
+    if not compare_digest(request.headers["X-Shkeeper-Backend-Key"], bkey):
+        app.logger.warning("Wrong backend key")
+        return {"status": "error", "message": "Wrong backend key"}, 403
+
+    return None
+
+
+def _json_payload_or_error():
+    try:
+        payload = request.get_json(force=True)
+    except BadRequest as e:
+        app.logger.exception("Invalid JSON")
+        return None, {"status": "error", "message": str(e)}, 400
+    if not isinstance(payload, dict):
+        return None, {"status": "error", "message": "JSON object is required"}, 400
+    return payload, None, None
 
 
 @blp_v1.route("/crypto")
@@ -544,6 +578,65 @@ def payout(crypto_name):
         audit_reason="legacy admin payout endpoint",
     )
 
+
+@blp_v1.post("/sweep-eligibility")
+def sweep_eligibility():
+    """Return AML sweep eligibility for a deposit address."""
+    auth_error = _backend_key_auth_error()
+    if auth_error:
+        return auth_error
+
+    payload, error, status_code = _json_payload_or_error()
+    if error:
+        return error, status_code
+
+    missing = [
+        field
+        for field in ("crypto", "network", "address")
+        if payload.get(field) is None or str(payload.get(field)).strip() == ""
+    ]
+    if missing:
+        return {
+            "status": "error",
+            "message": f"Missing required field(s): {', '.join(missing)}",
+        }, 400
+
+    try:
+        return decide_sweep_eligibility(
+            payload["crypto"],
+            payload["network"],
+            payload["address"],
+            txid=payload.get("txid"),
+        ), 200
+    except Exception as e:
+        app.logger.exception("Sweep eligibility error")
+        return {"status": "error", "message": str(e)}, 500
+
+
+@blp_v1.post("/sweep-resolution")
+def sweep_resolution():
+    """Record operator-attested AML manual sweep resolution evidence."""
+    auth_error = _backend_key_auth_error()
+    if auth_error:
+        return auth_error
+
+    payload, error, status_code = _json_payload_or_error()
+    if error:
+        return error, status_code
+
+    try:
+        return record_sweep_resolution(payload), 200
+    except SweepResolutionError as e:
+        return {
+            "status": "error",
+            "code": e.code,
+            "message": str(e),
+        }, e.status_code
+    except Exception as e:
+        app.logger.exception("Sweep resolution error")
+        return {"status": "error", "message": str(e)}, 500
+
+
 @blp_v1.post("/payoutnotify/<string:crypto_name>")
 @blp_v1.doc(**payout_callback_doc)
 def payoutnotify(crypto_name):
@@ -640,6 +733,9 @@ def walletnotify(crypto_name, txid):
             except sqlalchemy.exc.IntegrityError as e:
                 app.logger.warning(f"[{crypto.crypto}/{txid}] TX already exist in db")
                 db.session.rollback()
+                _process_existing_walletnotify_transaction(
+                    crypto, txid, addr, confirmations
+                )
         return {"status": "success"}
     except NotRelatedToAnyInvoice:
         app.logger.warning(f"Transaction {txid} is not related to any invoice")
@@ -656,6 +752,40 @@ def walletnotify(crypto_name, txid):
             "message": "Exception while processing transaction notification",
             "traceback": traceback.format_exc(),
         }, 409
+
+
+def _existing_receive_transaction_for_walletnotify(crypto_name, txid, addr):
+    candidates = Transaction.query.filter_by(crypto=crypto_name, txid=txid).all()
+    for tx in candidates:
+        if tx.invoice.status == InvoiceStatus.OUTGOING:
+            continue
+        if tx.addr == addr:
+            return tx
+    return None
+
+
+def _process_existing_walletnotify_transaction(crypto, txid, addr, confirmations):
+    tx = _existing_receive_transaction_for_walletnotify(crypto.crypto, txid, addr)
+    if tx is None:
+        app.logger.warning(
+            f"[{crypto.crypto}/{txid}] Existing TX duplicate was not matched to receive address {addr}"
+        )
+        return
+    if confirmations >= crypto.wallet.confirmations and tx.need_more_confirmations:
+        tx.need_more_confirmations = False
+        db.session.add(tx)
+        db.session.commit()
+    if tx.need_more_confirmations:
+        app.logger.info(f"[{crypto.crypto}/{txid}] Existing TX still needs confirmations")
+        return
+    if tx.callback_confirmed:
+        app.logger.info(f"[{crypto.crypto}/{txid}] Existing TX callback already confirmed")
+        return
+    ensure_aml_for_transaction(tx)
+    if is_callback_allowed(tx):
+        send_notification(tx)
+    else:
+        app.logger.info(f"[{crypto.crypto}/{txid}] Existing TX AML is pending")
 
 
 @blp_v1.get("/<string:crypto_name>/decrypt")

@@ -135,6 +135,7 @@ class AmlCallbackPayloadTestCase(unittest.TestCase):
         self.assertEqual(trigger["aml"]["supported"], True)
         self.assertEqual(trigger["aml"]["checked"], True)
         self.assertEqual(trigger["aml"]["check_status"], "success")
+        self.assertEqual(trigger["aml"]["review_required"], False)
         self.assertIsNone(trigger["aml"]["reason_code"])
         self.assertEqual(trigger["aml"]["provider"], "koinkyt")
         self.assertEqual(trigger["aml"]["score"], "0.04")
@@ -161,6 +162,7 @@ class AmlCallbackPayloadTestCase(unittest.TestCase):
         self.assertEqual(trigger["aml"]["supported"], True)
         self.assertEqual(trigger["aml"]["checked"], False)
         self.assertEqual(trigger["aml"]["check_status"], "skipped")
+        self.assertEqual(trigger["aml"]["review_required"], False)
         self.assertEqual(
             trigger["aml"]["reason_code"], "amount_below_shkeeper_threshold"
         )
@@ -187,6 +189,7 @@ class AmlCallbackPayloadTestCase(unittest.TestCase):
         self.assertEqual(trigger["aml"]["supported"], True)
         self.assertEqual(trigger["aml"]["checked"], True)
         self.assertEqual(trigger["aml"]["check_status"], "success")
+        self.assertEqual(trigger["aml"]["review_required"], True)
         self.assertEqual(trigger["aml"]["score"], "0.72")
 
     def test_unsupported_callback_contains_unchecked_aml_payload(self):
@@ -209,6 +212,43 @@ class AmlCallbackPayloadTestCase(unittest.TestCase):
         self.assertEqual(trigger["aml"]["supported"], False)
         self.assertEqual(trigger["aml"]["checked"], False)
         self.assertEqual(trigger["aml"]["check_status"], "unsupported")
+        self.assertEqual(trigger["aml"]["review_required"], False)
+        self.assertEqual(trigger["aml"]["reason_code"], "unsupported_asset")
+        self.assertEqual(trigger["aml"]["provider_status"], "unsupported")
+        self.assertEqual(trigger["aml"]["error_code"], "unsupported_asset")
+        self.assertNotIn("deposit_decision", trigger)
+        self.assertNotIn("decision_reason", trigger)
+
+    def test_unsupported_ton_usdt_callback_does_not_require_review_without_provider_coverage(self):
+        tx = self.make_tx()
+        tx.crypto = "TON-USDT"
+        tx.invoice.crypto = "TON-USDT"
+        db.session.add(
+            Wallet(
+                crypto="TON-USDT",
+                apikey="api-key",
+                llimit=Decimal("95"),
+                ulimit=Decimal("105"),
+            )
+        )
+        db.session.add(
+            ExchangeRate(
+                crypto="TON-USDT",
+                fiat="USD",
+                rate=Decimal("1"),
+                fee=Decimal("0"),
+                fixed_fee=Decimal("0"),
+                fee_policy=FeeCalculationPolicy.PERCENT_FEE,
+            )
+        )
+        db.session.commit()
+
+        trigger = build_payment_notification(tx)["transactions"][0]
+
+        self.assertEqual(trigger["aml"]["supported"], False)
+        self.assertEqual(trigger["aml"]["checked"], False)
+        self.assertEqual(trigger["aml"]["check_status"], "unsupported")
+        self.assertEqual(trigger["aml"]["review_required"], False)
         self.assertEqual(trigger["aml"]["reason_code"], "unsupported_asset")
         self.assertEqual(trigger["aml"]["provider_status"], "unsupported")
         self.assertEqual(trigger["aml"]["error_code"], "unsupported_asset")

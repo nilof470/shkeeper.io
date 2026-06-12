@@ -13,7 +13,16 @@ class AmlCoverageTestCase(unittest.TestCase):
         self.assertEqual(missing, [])
 
     def test_known_supported_and_unsupported_assets_are_explicit(self):
-        for symbol in ("BTC", "LTC", "DOGE", "ETH-USDT", "BTC-LIGHTNING", "XMR"):
+        for symbol in (
+            "BTC",
+            "LTC",
+            "DOGE",
+            "ETH-USDT",
+            "BNB-USDT",
+            "TON-USDT",
+            "BTC-LIGHTNING",
+            "XMR",
+        ):
             self.assertIn(symbol, AML_COVERAGE)
 
     def test_supported_mapping_contains_provider_asset_and_network(self):
@@ -38,6 +47,12 @@ class AmlCoverageTestCase(unittest.TestCase):
         policy = get_coverage_policy("BTC-LIGHTNING")
         self.assertEqual(policy["status"], "unsupported")
         self.assertEqual(policy["reason"], "limited_analysis_requires_review")
+
+    def test_unsupported_usdt_networks_are_explicit_for_future_provider_coverage(self):
+        for symbol in ("BNB-USDT", "TON-USDT"):
+            policy = get_coverage_policy(symbol)
+            self.assertEqual(policy["status"], "unsupported")
+            self.assertEqual(policy["reason"], "unsupported_asset")
 
 
 if __name__ == "__main__":

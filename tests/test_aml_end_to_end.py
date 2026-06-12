@@ -20,6 +20,7 @@ from shkeeper.models import (
     Wallet,
 )
 from shkeeper.services import aml_processing
+from shkeeper.services.sweep_eligibility import decide_sweep_eligibility
 
 
 class AmlEndToEndTestCase(unittest.TestCase):
@@ -58,6 +59,9 @@ class AmlEndToEndTestCase(unittest.TestCase):
         )
         db.session.commit()
         self.original_crypto_instances = dict(Crypto.instances)
+        import shkeeper.api_v1 as api_v1_module
+
+        self.app.register_blueprint(api_v1_module.bp)
         Crypto.instances["BTC"] = type(
             "FakeCrypto",
             (),
@@ -136,6 +140,7 @@ class AmlEndToEndTestCase(unittest.TestCase):
             provider="koinkyt",
             status=AmlStatus.CHECKING,
             provider_status="pending",
+            create_check_submitted=True,
         )
         db.session.add(check)
         db.session.commit()
@@ -168,6 +173,7 @@ class AmlEndToEndTestCase(unittest.TestCase):
             provider="koinkyt",
             status=AmlStatus.CHECKING,
             provider_status="pending",
+            create_check_submitted=True,
         )
         db.session.add(check)
         db.session.commit()
@@ -209,12 +215,86 @@ class AmlEndToEndTestCase(unittest.TestCase):
         self.assertIsNone(check)
         self.assertTrue(aml_processing.is_callback_allowed(tx))
 
+    def test_unsupported_ton_usdt_bypasses_aml_and_allows_live_sweep(self):
+        tx = self.make_tx("150", crypto="TON-USDT", txid="ton-usdt-unsupported-tx")
+
+        check = aml_processing.ensure_aml_for_transaction(tx)
+        sweep = decide_sweep_eligibility(
+            "TON-USDT",
+            "TON",
+            tx.addr,
+            txid="ton-usdt-unsupported-tx",
+        )
+
+        self.assertIsNone(check)
+        self.assertTrue(aml_processing.is_callback_allowed(tx))
+        self.assertEqual(sweep["decision"], "allow")
+        self.assertEqual(sweep["reason"], "legacy_no_guarded_deposits")
+
     def test_replayed_walletnotify_reuses_aml_check(self):
         tx = self.make_tx("50", txid="same-tx")
         first = aml_processing.ensure_aml_for_transaction(tx)
         second = aml_processing.ensure_aml_for_transaction(tx)
 
         self.assertEqual(first.id, second.id)
+        self.assertEqual(AmlCheck.query.count(), 1)
+
+    def test_replayed_walletnotify_creates_missing_aml_check_for_existing_tx(self):
+        invoice = Invoice(
+            external_id="user-1",
+            fiat="USD",
+            crypto="BTC",
+            addr="addr-1",
+            callback_url="http://callback.local",
+            amount_fiat=Decimal("1000"),
+            amount_crypto=Decimal("1"),
+            exchange_rate=Decimal("1000"),
+            balance_fiat=Decimal("150"),
+            balance_crypto=Decimal("0.15"),
+        )
+        db.session.add(invoice)
+        db.session.commit()
+        db.session.add(InvoiceAddress(invoice_id=invoice.id, crypto="BTC", addr="addr-1"))
+        db.session.commit()
+        tx = Transaction(
+            invoice_id=invoice.id,
+            txid="same-walletnotify-tx",
+            crypto="BTC",
+            amount_crypto=Decimal("0.15"),
+            amount_fiat=Decimal("150"),
+            need_more_confirmations=False,
+        )
+        db.session.add(tx)
+        db.session.commit()
+        Crypto.instances["BTC"] = type(
+            "FakeCrypto",
+            (),
+            {
+                "crypto": "BTC",
+                "precision": 8,
+                "wallet": type(
+                    "FakeWallet",
+                    (),
+                    {"apikey": "api-key", "confirmations": 1},
+                )(),
+                "getaddrbytx": lambda self, txid: [
+                    ("addr-1", Decimal("0.15"), 1, "receive")
+                ],
+            },
+        )()
+        calls = []
+        aml_processing.AmlShkeeperClient.create_check = lambda client, payload: calls.append(
+            payload
+        ) or {"provider_status": "pending", "status": "pending"}
+        client = self.app.test_client()
+
+        response = client.post(
+            "/api/v1/walletnotify/BTC/same-walletnotify-tx",
+            headers={"X-Shkeeper-Backend-Key": "shkeeper"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(calls), 1)
         self.assertEqual(AmlCheck.query.count(), 1)
 
 

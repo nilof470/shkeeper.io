@@ -51,6 +51,8 @@ def _aml_check_status(aml_check):
         return "skipped"
     if _aml_checked(aml_check):
         return "success"
+    if aml_check.decision_reason == "unsupported_asset":
+        return "unsupported"
     if aml_check.decision_reason == "aml_pending_timeout":
         return "timeout"
     if aml_check.decision_reason == "aml_provider_error":
@@ -70,6 +72,7 @@ def _aml_reason_code(aml_check):
     if aml_check.skip_reason == "amount_below_threshold":
         return "amount_below_shkeeper_threshold"
     if aml_check.decision_reason in (
+        "unsupported_asset",
         "aml_pending_timeout",
         "aml_provider_error",
         "incomplete_aml_result",
@@ -82,6 +85,10 @@ def _aml_reason_code(aml_check):
     if not _aml_checked(aml_check):
         return "incomplete_aml_result"
     return None
+
+
+def _aml_review_required(aml_check):
+    return aml_check.deposit_decision == DepositDecision.MANUAL_REVIEW
 
 
 def _aml_policy_payload(aml_check):
@@ -110,6 +117,7 @@ def _unsupported_aml_payload(tx):
         "supported": False,
         "checked": False,
         "check_status": "unsupported",
+        "review_required": False,
         "reason_code": reason,
         "provider": policy.get("provider"),
         "provider_status": "unsupported",
@@ -126,21 +134,28 @@ def _unsupported_aml_payload(tx):
 
 
 def _aml_payload(aml_check):
+    coverage = get_coverage_policy(aml_check.transaction.crypto)
+    supported = coverage["status"] == SUPPORTED_STATUS
     payload = {
-        "supported": True,
+        "supported": supported,
         "checked": _aml_checked(aml_check),
         "check_status": _aml_check_status(aml_check),
+        "review_required": _aml_review_required(aml_check),
         "reason_code": _aml_reason_code(aml_check),
         "provider": aml_check.provider,
-        "provider_status": aml_check.provider_status,
+        "provider_status": aml_check.provider_status or (
+            "unsupported" if not supported else None
+        ),
         "score": _decimal_or_none(aml_check.score),
         "uid": aml_check.uid,
         "asset": aml_check.asset,
         "network": aml_check.network,
         "signals": _json_object(aml_check.signals_json),
         "report_url": aml_check.report_url,
-        "error_code": aml_check.error_code,
-        "error_message": aml_check.error_message,
+        "error_code": aml_check.error_code
+        or ("unsupported_asset" if not supported else None),
+        "error_message": aml_check.error_message
+        or ("AML provider does not support this asset" if not supported else None),
         "policy": _aml_policy_payload(aml_check),
     }
     return payload

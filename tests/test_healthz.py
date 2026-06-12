@@ -31,6 +31,9 @@ class HealthzTestCase(unittest.TestCase):
         for name in self.original_env:
             os.environ[name] = "disabled"
         self.original_disable_scheduler = os.environ.pop("DISABLE_SCHEDULER", None)
+        self.original_aml_max_accept_score = os.environ.pop(
+            "AML_MAX_ACCEPT_SCORE", None
+        )
 
         self.original_crypto_instances = dict(Crypto.instances)
         Crypto.instances.clear()
@@ -65,12 +68,19 @@ class HealthzTestCase(unittest.TestCase):
             os.environ.pop("DISABLE_SCHEDULER", None)
         else:
             os.environ["DISABLE_SCHEDULER"] = self.original_disable_scheduler
+        if self.original_aml_max_accept_score is None:
+            os.environ.pop("AML_MAX_ACCEPT_SCORE", None)
+        else:
+            os.environ["AML_MAX_ACCEPT_SCORE"] = self.original_aml_max_accept_score
 
     def test_healthz_returns_ok_without_authentication(self):
         response = self.client.get("/healthz")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), {"status": "ok"})
+
+    def test_default_aml_max_accept_score_is_zero_point_seven(self):
+        self.assertEqual(self.app.config["AML_MAX_ACCEPT_SCORE"], "0.70")
 
     def test_payout_execution_reconciler_cli_command_is_registered(self):
         self.assertIn("payout-execution-reconciler", self.app.cli.commands)

@@ -834,8 +834,8 @@ aml_shkeeper:
 ```
 
 `AML_MAX_ACCEPT_SCORE` in SHKeeper and `AML_DEFAULT_THRESHOLD` in
-`aml-shkeeper` should normally match. `0.70` is the permissive value used in the
-live USDT TRC20 test; lower it if production policy requires stricter review.
+`aml-shkeeper` should normally match. `0.70` is the AML-gated sweep policy value;
+raise it only with an explicit compliance decision.
 
 AML parameter reference:
 
@@ -846,7 +846,7 @@ AML parameter reference:
 | `AML_SHKEEPER_HOST` | `shkeeper` | `http://aml-shkeeper:6000` | Internal URL of the AML sidecar API. |
 | `AML_SHKEEPER_USERNAME` | `shkeeper` | `AML_USERNAME` or `shkeeper` | Basic Auth user for calls from SHKeeper to `aml-shkeeper`. |
 | `AML_SHKEEPER_PASSWORD` | `shkeeper` | `AML_PASSWORD` or `shkeeper` | Basic Auth password for calls from SHKeeper to `aml-shkeeper`. |
-| `AML_MAX_ACCEPT_SCORE` | `shkeeper` | `0.10` | Main accept threshold. A result with score `<=` this value is credited; higher score goes to manual review. |
+| `AML_MAX_ACCEPT_SCORE` | `shkeeper` | `0.70` | Main accept threshold. A result with score `<=` this value is credited; higher score goes to manual review. |
 | `AML_MIN_CHECK_AMOUNT_FIAT` | `shkeeper` | `100` | Deposits at or above this fiat value must be checked by AML. |
 | `AML_SKIP_CUMULATIVE_LIMIT_FIAT` | `shkeeper` | `300` | Maximum cumulative fiat amount that may skip AML within the skip window. |
 | `AML_SKIP_CUMULATIVE_WINDOW_HOURS` | `shkeeper` | `24` | Time window for the cumulative skip limit. |
@@ -856,7 +856,7 @@ AML parameter reference:
 | `AML_USERNAME` | `aml-shkeeper` | `shkeeper` | Basic Auth user exposed by the AML sidecar. Must match `AML_SHKEEPER_USERNAME`. |
 | `AML_PASSWORD` | `aml-shkeeper` | `shkeeper` | Basic Auth password exposed by the AML sidecar. Must match `AML_SHKEEPER_PASSWORD`. |
 | `CURRENT_PROVIDER` | `aml-shkeeper` | `koinkyt` | Provider used by the sidecar. Supported values in this fork: `koinkyt`, `amlbot`. |
-| `AML_DEFAULT_THRESHOLD` | `aml-shkeeper` | `0.10` | Stored on legacy checks, or on v1 checks only when SHKeeper does not send a threshold. Keep it aligned with `AML_MAX_ACCEPT_SCORE`. |
+| `AML_DEFAULT_THRESHOLD` | `aml-shkeeper` | `0.70` | Stored on legacy checks, or on v1 checks only when SHKeeper does not send a threshold. Keep it aligned with `AML_MAX_ACCEPT_SCORE`. |
 | `KOINKYT_API_KEY` | `aml-shkeeper` | empty | Required when `CURRENT_PROVIDER=koinkyt`. Sent as `X-API-Key`. |
 | `KOINKYT_HOST` | `aml-shkeeper` | `https://explorer.coinkyt.com/openapi/v1` | Koinkyt API base URL. |
 | `KOINKYT_RISK_PROFILE_IDS` | `aml-shkeeper` | empty | Optional comma- or semicolon-separated Koinkyt risk profile IDs. |
@@ -1964,12 +1964,14 @@ Common TON address provisioning failures:
   the base `TON` crypto is not enabled in the main SHKeeper deployment. Keep
   `ton.enabled=true` even when the product only accepts `TON-USDT` deposits.
 - `{"message":"Wrong backend key"}`: the request header does not match
-  `SHKEEPER_BTC_BACKEND_KEY` in the main SHKeeper deployment. The TON sidecar
-  sends `SHKEEPER_BACKEND_KEY`; those two values must match. When diagnosing,
+  `SHKEEPER_BACKEND_KEY` in the main SHKeeper deployment. The TON sidecar sends
+  the same `SHKEEPER_BACKEND_KEY`; those two values must match. Older
+  deployments may still have `SHKEEPER_BTC_BACKEND_KEY` as a legacy fallback,
+  but new configuration should use `SHKEEPER_BACKEND_KEY`. When diagnosing,
   compare hashes instead of printing the secret:
 
   ```bash
-  kubectl exec -n shkeeper deployment/shkeeper-deployment -- sh -c 'v="${SHKEEPER_BTC_BACKEND_KEY:-shkeeper}"; printf %s "$v" | sha256sum'
+  kubectl exec -n shkeeper deployment/shkeeper-deployment -- sh -c 'v="${SHKEEPER_BACKEND_KEY:-${SHKEEPER_BTC_BACKEND_KEY:-shkeeper}}"; printf %s "$v" | sha256sum'
   kubectl exec -n shkeeper deployment/ton-shkeeper -c app -- sh -c 'v="${SHKEEPER_BACKEND_KEY:-shkeeper}"; printf %s "$v" | sha256sum'
   ```
 
